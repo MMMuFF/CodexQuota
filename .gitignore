@@ -1,0 +1,15 @@
+.build/
+dist/
+DerivedData/
+*.xcarchive
+.DS_Store
+*.xcuserstate
+.env
+.env.*
+!.env.example
+auth.json
+*.p12
+*.cer
+*.mobileprovision
+*.pem
+*.key

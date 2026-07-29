@@ -2,11 +2,23 @@
 
 一个开源的 macOS 伴生应用：在 Codex Desktop 左侧栏底部、用户昵称右侧显示额度，不占用菜单栏，也不修改 Codex 安装包。
 
-```text
-34% · 7月25日 · 4天
-```
+<p align="center">
+  <img
+    src="./docs/images/codex-quota-sidebar.png"
+    alt="Codex 左侧栏昵称旁显示额度剩余百分比、刷新日期和剩余天数"
+    width="620">
+</p>
+<p align="center"><sub>昵称旁常显：剩余额度 · 刷新日期 · 剩余天数（演示数据）</sub></p>
 
 鼠标悬停后可查看会员到期时间、额度刷新时间和最早到期重置券，并可手动刷新或在二次确认后使用一张重置券。
+
+<p align="center">
+  <img
+    src="./docs/images/codex-quota-popover.png"
+    alt="Codex 额度详情卡显示会员到期、额度刷新时间和最早到期重置券"
+    width="620">
+</p>
+<p align="center"><sub>悬停详情：具体刷新时间、会员到期与最早到期重置券（演示数据）</sub></p>
 
 > [!IMPORTANT]
 > 当前提供的是源码本地构建方式，没有 Developer ID 公证安装器。默认产物使用 ad-hoc 签名，适合自行检查源码后在本机使用；重新构建后，macOS 可能要求重新授权辅助功能。

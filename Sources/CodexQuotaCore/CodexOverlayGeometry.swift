@@ -231,7 +231,7 @@ public enum CodexOverlayGeometry {
         guard accountControlFrame.minX >= sidebarFrame.minX - 4
             && accountControlFrame.maxX <= sidebarFrame.maxX + 4
             && accountControlFrame.width >= sidebarFrame.width * 0.55
-            && accountControlFrame.height >= 28
+            && accountControlFrame.height >= 24
             && accountControlFrame.height <= 56
             && accountBottomGap >= -4
             && accountBottomGap <= 24

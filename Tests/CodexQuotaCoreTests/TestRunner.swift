@@ -760,6 +760,14 @@ private struct CodexQuotaCoreTestRunner {
             "紧凑任务页账户底栏未被识别"
         )
         try expect(
+            CodexOverlayGeometry.isTaskSidebarFooter(
+                sidebarFrame: CGRect(x: 1_044, y: 30, width: 258, height: 1_239),
+                accountControlFrame: CGRect(x: 1_051, y: 1_235, width: 207, height: 27),
+                trailingButtonFrame: CGRect(x: 1_265, y: 1_234, width: 29, height: 29)
+            ),
+            "Codex 26.803.41515 的 27px 账户底栏未被识别"
+        )
+        try expect(
             !CodexOverlayGeometry.isTaskSidebarFooter(
                 sidebarFrame: sidebar,
                 accountControlFrame: CGRect(x: 69, y: 1_065, width: 258, height: 41),

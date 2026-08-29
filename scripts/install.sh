@@ -5,8 +5,10 @@ set -euo pipefail
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 default_archive="${project_dir}/.build/artifacts/CodexQuota.zip"
-install_dir="${CODEX_QUOTA_INSTALL_DIR:-${HOME}/Applications}"
+install_dir="${CODEX_QUOTA_INSTALL_DIR:-/Applications}"
 target_app="${install_dir}/CodexQuota.app"
+expected_bundle_id="com.mufeng.codexquota"
+legacy_app="${HOME}/Applications/CodexQuota.app"
 archive_path=""
 
 usage() {
@@ -16,6 +18,7 @@ usage() {
   ./scripts/install.sh --archive /path/to/CodexQuota.zip
 
 默认从当前源码构建后安装。--archive 只安装指定的本地 ZIP，不会联网下载。
+默认安装到 /Applications/CodexQuota.app；可用 CODEX_QUOTA_INSTALL_DIR 自定义目录。
 EOF
 }
 
@@ -44,9 +47,28 @@ expanded_root="${staging_root}/expanded"
 staged_app="${expanded_root}/CodexQuota.app"
 replacement_app="${install_dir}/.CodexQuota.installing.$$"
 previous_app="${install_dir}/.CodexQuota.previous.$$"
+legacy_previous="${HOME}/Applications/.CodexQuota.previous.$$"
 did_move_previous=false
+did_move_legacy=false
 did_place_replacement=false
 installation_committed=false
+
+validate_existing_app() {
+    local app_path="$1"
+    local app_plist="${app_path}/Contents/Info.plist"
+    local app_bundle_id=""
+
+    if [[ ! -d "${app_path}" || -L "${app_path}" || ! -f "${app_plist}" ]]; then
+        echo "错误：目标路径不是有效的 CodexQuota 应用：${app_path}" >&2
+        return 1
+    fi
+    if ! app_bundle_id="$(
+        /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${app_plist}" 2>/dev/null
+    )" || [[ "${app_bundle_id}" != "${expected_bundle_id}" ]]; then
+        echo "错误：拒绝替换 Bundle ID 不匹配的同名应用：${app_path}" >&2
+        return 1
+    fi
+}
 
 cleanup() {
     local exit_status="$?"
@@ -69,14 +91,29 @@ cleanup() {
                 exit_status=74
             fi
         fi
+
+        if [[ "${did_move_legacy}" == true && -e "${legacy_previous}" ]]; then
+            if [[ -e "${legacy_app}" ]]; then
+                echo "严重错误：旧路径仍存在，迁移备份保留在：${legacy_previous}" >&2
+                exit_status=74
+            elif ! mv "${legacy_previous}" "${legacy_app}"; then
+                echo "严重错误：无法恢复旧路径应用，备份仍位于：${legacy_previous}" >&2
+                exit_status=74
+            fi
+        fi
     fi
 
     if ! rm -rf "${replacement_app}" "${staging_root}"; then
         exit_status=74
     fi
     if [[ "${installation_committed}" == true ]]; then
-        if ! rm -rf "${previous_app}"; then
+        if [[ "${did_move_previous}" == true && -e "${previous_app}" ]] \
+            && ! rm -rf "${previous_app}"; then
             echo "提示：安装成功，但旧版隐藏备份未能清理：${previous_app}" >&2
+        fi
+        if [[ "${did_move_legacy}" == true && -e "${legacy_previous}" ]] \
+            && ! rm -rf "${legacy_previous}"; then
+            echo "提示：迁移成功，但旧路径隐藏备份未能清理：${legacy_previous}" >&2
         fi
     fi
     exit "${exit_status}"
@@ -104,7 +141,7 @@ fi
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${plist}")"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")"
 build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")"
-if [[ "${bundle_id}" != "com.mufeng.codexquota" || -z "${version}" || -z "${build}" ]]; then
+if [[ "${bundle_id}" != "${expected_bundle_id}" || -z "${version}" || -z "${build}" ]]; then
     echo "错误：Bundle 信息不符合 CodexQuota 发行约定。" >&2
     exit 65
 fi
@@ -117,8 +154,13 @@ rm -rf "${replacement_app}"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "${replacement_app}"
 
 if [[ -e "${target_app}" ]]; then
-    if [[ ! -d "${target_app}" || -L "${target_app}" ]]; then
-        echo "错误：目标路径不是可替换的应用目录：${target_app}" >&2
+    if ! validate_existing_app "${target_app}"; then
+        exit 73
+    fi
+
+    if [[ "${install_dir}" == "/Applications" && "${legacy_app}" != "${target_app}" \
+        && -e "${legacy_app}" ]]; then
+        echo "错误：系统与用户应用目录同时存在 CodexQuota；请先移除旧副本后重试。" >&2
         exit 73
     fi
 
@@ -137,8 +179,23 @@ if [[ -e "${target_app}" ]]; then
         echo "提示：新旧签名身份不同，macOS 可能要求重新授权“辅助功能”。" >&2
     fi
 
+    if [[ -e "${previous_app}" ]]; then
+        echo "错误：旧版安装备份已存在：${previous_app}" >&2
+        exit 73
+    fi
     mv "${target_app}" "${previous_app}"
     did_move_previous=true
+elif [[ "${install_dir}" == "/Applications" && "${legacy_app}" != "${target_app}" \
+    && -e "${legacy_app}" ]]; then
+    if ! validate_existing_app "${legacy_app}"; then
+        exit 73
+    fi
+    if [[ -e "${legacy_previous}" ]]; then
+        echo "错误：旧路径迁移备份已存在：${legacy_previous}" >&2
+        exit 73
+    fi
+    mv "${legacy_app}" "${legacy_previous}"
+    did_move_legacy=true
 fi
 
 if ! mv "${replacement_app}" "${target_app}"; then

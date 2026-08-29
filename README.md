@@ -27,11 +27,13 @@
 
 - 显示当前额度剩余百分比、刷新日期/具体时间和剩余天数
 - 根据当前会员类型显示 Plus、Pro 等会员到期时间
+- 续费后若上游 Token 的到期日期尚未同步，显示“待同步”而不是旧日期
 - 显示最早到期重置券及可用数量
 - 额度每 5 分钟刷新，也可在详情卡中手动刷新
 - 跟随 Codex 侧边栏移动、缩放和收起
 - 设置页、侧边栏收起、窗口最小化或 Codex 不在前台时自动隐藏
 - 切换账户后按账户重新读取，并隔离重置券幂等请求
+- 使用独立设计的额度仪表环应用图标
 - 不占用 Dock、菜单栏或普通主窗口
 
 ## 系统要求
@@ -62,10 +64,18 @@ cd CodexQuota
 
 1. 从当前源码构建 `.build/artifacts/CodexQuota.zip`
 2. 校验 Bundle ID、版本和代码签名完整性
-3. 安装到 `~/Applications/CodexQuota.app`
+3. 安装到 `/Applications/CodexQuota.app`
 4. 从固定路径启动应用
 
 脚本不使用 `sudo`、不联网下载依赖、不主动清除 Gatekeeper 隔离属性，也不会修改 `/Applications/ChatGPT.app`。如果任意 CodexQuota 副本仍在运行，脚本会拒绝覆盖；请先全部退出。
+
+从旧版的 `~/Applications/CodexQuota.app` 更新时，若系统“应用程序”目录还没有同名 App，安装器会先校验 Bundle ID，再以可回滚方式迁移。若两个目录已经同时存在副本，安装器会停止并请你先确认要保留哪一个，避免误删或覆盖其他同名应用。
+
+非管理员账户若无权写入 `/Applications`，可改装到个人应用目录：
+
+```bash
+CODEX_QUOTA_INSTALL_DIR="$HOME/Applications" ./scripts/install.sh
+```
 
 代码签名检查用于确认应用在复制过程中没有损坏，不验证发布者身份，也不代表应用经过 Apple 公证。
 
@@ -85,14 +95,14 @@ Apple Development 证书适合同机开发测试，不等于面向公众分发�
 
 ## 首次使用
 
-1. 打开 `~/Applications/CodexQuota.app`。
+1. 打开 `/Applications/CodexQuota.app`。
 2. 打开 Codex 的普通任务页，并展开左侧栏。
 3. 首次出现提示时，前往「系统设置 → 隐私与安全性 → 辅助功能」，允许“Codex 昵称额度”或 `CodexQuota`。
 4. 回到 Codex；昵称右侧会显示额度，悬停即可打开详情卡。
 
 辅助功能权限只用于读取 Codex 窗口、任务侧边栏和分隔线的几何结构，以保持额度位置正确。应用不需要屏幕录制、输入监控或完全磁盘访问，不监听全局键盘或鼠标；仅处理自身额度组件与详情卡上的悬停和点击。
 
-应用使用 `LSUIElement` 运行，因此没有 Dock 图标、菜单栏图标或普通主窗口。退出后需要从 `~/Applications/CodexQuota.app` 重新启动。
+应用使用 `LSUIElement` 运行，因此没有 Dock 图标、菜单栏图标或普通主窗口。退出后需要从 `/Applications/CodexQuota.app` 重新启动。
 
 首次启动会请求通过 macOS `SMAppService` 注册登录启动。若系统要求批准，可在「系统设置 → 通用 → 登录项」中开启“Codex 昵称额度”。手动退出或崩溃后不会立刻自动拉起，只会在下次登录时启动。
 
@@ -119,7 +129,7 @@ git pull
 ./scripts/install.sh
 ```
 
-请把 `/path/to/CodexQuota` 替换为首次克隆时的仓库目录。只在 `~/Applications/CodexQuota.app` 保留一个稳定副本。不要从下载目录、临时解压目录或旧构建目录长期运行，否则 macOS 辅助功能授权和 Spotlight 可能指向不同副本。
+请把 `/path/to/CodexQuota` 替换为首次克隆时的仓库目录。只在 `/Applications/CodexQuota.app` 保留一个稳定副本。不要从下载目录、临时解压目录或旧构建目录长期运行，否则 macOS 辅助功能授权和 Spotlight 可能指向不同副本。
 
 ## 验证与开发
 
@@ -151,12 +161,12 @@ scripts/                  构建、安装与检查脚本
 ```bash
 test -x /Applications/ChatGPT.app/Contents/Resources/codex
 pgrep -fl CodexQuota
-codesign --verify --deep --strict "$HOME/Applications/CodexQuota.app"
+codesign --verify --deep --strict "/Applications/CodexQuota.app"
 ```
 
 ### 已授权辅助功能但仍不显示
 
-检查是否授权了下载目录或旧解压目录中的同名副本。退出应用，在辅助功能列表中移除旧条目，只保留 `~/Applications/CodexQuota.app`，重新添加后再启动。
+检查是否授权了下载目录或旧解压目录中的同名副本。退出应用，在辅助功能列表中移除旧条目，只保留 `/Applications/CodexQuota.app`，重新添加后再启动。
 
 ad-hoc 重新构建会改变代码签名。如果旧授权失效，请退出应用、移除旧权限条目、重新添加稳定安装路径，再启动。
 
@@ -166,7 +176,7 @@ ad-hoc 重新构建会改变代码签名。如果旧授权失效，请退出应�
 
 ### 出现多个同名应用
 
-只保留 `~/Applications/CodexQuota.app`。删除下载目录和旧构建目录中手动解压的 `.app`，不要修改 Spotlight 数据库。仓库内的 `.build` 可以用 SwiftPM 常规清理命令重新生成。
+只保留 `/Applications/CodexQuota.app`。删除下载目录和旧构建目录中手动解压的 `.app`，不要修改 Spotlight 数据库。仓库内的 `.build` 可以用 SwiftPM 常规清理命令重新生成。
 
 ### 错位、拖动后消失或悬停无响应
 
@@ -175,7 +185,8 @@ ad-hoc 重新构建会改变代码签名。如果旧授权失效，请退出应�
 ## 数据与隐私
 
 - 额度百分比和刷新时间优先由本机 `codex app-server` 读取。
-- 会员到期时间仅在本机解码 `~/.codex/auth.json` 的订阅日期字段。
+- 会员到期时间仅在本机解码 `~/.codex/auth.json` 中 ID/access token 的订阅日期字段，并优先采用较新的日期。
+- 若新 Token 仍携带已经过去的到期日期，界面显示“待同步”，不会自行推算续费日期。
 - 重置券详情使用同一份本机登录态，仅向 `https://chatgpt.com` 发出 HTTPS 请求，并拒绝重定向。
 - Token 不写入日志、不进入 UI 状态、不持久化到项目，也不会发送给第三方。
 - 不包含遥测、广告、统计或追踪。
@@ -188,7 +199,7 @@ CodexQuota 不是 OpenAI 官方产品，与 OpenAI 无隶属或背书关系。�
 1. 在详情卡中点击“退出…”。
 2. 在「系统设置 → 通用 → 登录项」中关闭“Codex 昵称额度”。
 3. 在「系统设置 → 隐私与安全性 → 辅助功能」中移除对应权限。
-4. 将 `~/Applications/CodexQuota.app` 移到废纸篓。
+4. 将 `/Applications/CodexQuota.app` 移到废纸篓。
 
 如需同时清除本机偏好，可在确认没有结果不明的重置券请求后运行：
 

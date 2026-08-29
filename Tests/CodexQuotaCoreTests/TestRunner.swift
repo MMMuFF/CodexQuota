@@ -36,6 +36,9 @@ private struct CodexQuotaCoreTestRunner {
             ("真实 7 天结构得到 39% 剩余", liveRateLimitShape),
             ("多窗口选择最长周期", longestWindowWins),
             ("JWT 订阅字段本机解码", jwtSubscriptionClaim),
+            ("较新的会员日期优先", newerSubscriptionClaimWins),
+            ("不同账户会员日期不混用", mismatchedSubscriptionClaimIgnored),
+            ("会员套餐不从其他账户回退", mismatchedPlanFallbackIgnored),
             ("重置券选择最早可用到期项", nearestResetCreditExpiration),
             ("app-server 券明细兼容", appServerResetCreditDetails),
             ("消费结果纯解析", consumeOutcomes),
@@ -44,6 +47,8 @@ private struct CodexQuotaCoreTestRunner {
             ("重置券接口拒绝重定向", resetCreditRedirectPolicy),
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
             ("北京时间中文短文案", chineseDateFormatting),
+            ("过期会员日期不再误报", staleSubscriptionExpiration),
+            ("会员日期未同步状态提示", staleSubscriptionFreshness),
             ("重置券未知状态不误报为空", resetCreditPresentationStates),
             ("选择最前方 Codex 主窗口", overlayWindowSelection),
             ("窗口坐标转换为 AppKit 坐标", overlayCoordinateConversion),
@@ -149,7 +154,7 @@ private struct CodexQuotaCoreTestRunner {
         let payload: JSONDictionary = [
             "https://api.openai.com/auth": [
                 "chatgpt_plan_type": "pro",
-                "chatgpt_account_id": "account-for-fixture-only",
+                "chatgpt_account_id": "fixture-account",
                 "chatgpt_subscription_active_until": "2026-07-30T16:00:00Z"
             ]
         ]
@@ -169,6 +174,84 @@ private struct CodexQuotaCoreTestRunner {
             "订阅结束时间错误"
         )
         try expect(auth.planType == "pro", "JWT 计划错误")
+    }
+
+    private static func newerSubscriptionClaimWins() throws {
+        let authData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "account_id": "fixture-account",
+                "id_token": try fixtureToken(
+                    planType: "pro",
+                    accountID: "fixture-account",
+                    activeUntil: "2026-08-28T13:52:03Z"
+                ),
+                "access_token": try fixtureToken(
+                    planType: "plus",
+                    accountID: "fixture-account",
+                    activeUntil: "2026-09-28T13:52:03Z"
+                ),
+            ]
+        ])
+        let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
+
+        try expect(
+            auth.subscriptionActiveUntil
+                == ISO8601DateFormatter().date(from: "2026-09-28T13:52:03Z"),
+            "仍优先使用旧 ID Token 的会员到期日"
+        )
+        try expect(auth.planType == "plus", "会员日期与套餐类型来自不同 Token")
+    }
+
+    private static func mismatchedSubscriptionClaimIgnored() throws {
+        let authData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "account_id": "account-a",
+                "id_token": try fixtureToken(
+                    planType: "pro",
+                    accountID: "account-a",
+                    activeUntil: "2026-08-28T13:52:03Z"
+                ),
+                "access_token": try fixtureToken(
+                    planType: "plus",
+                    accountID: "account-b",
+                    activeUntil: "2026-09-28T13:52:03Z"
+                ),
+            ]
+        ])
+        let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
+
+        try expect(
+            auth.subscriptionActiveUntil
+                == ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
+            "混用了其他账户的会员到期日"
+        )
+        try expect(auth.planType == "pro", "混用了其他账户的套餐类型")
+    }
+
+    private static func mismatchedPlanFallbackIgnored() throws {
+        let authData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "account_id": "account-a",
+                "id_token": try fixtureToken(
+                    planType: "pro",
+                    accountID: "account-b",
+                    activeUntil: "2026-08-28T13:52:03Z"
+                ),
+                "access_token": try fixtureToken(
+                    planType: nil,
+                    accountID: "account-a",
+                    activeUntil: "2026-09-28T13:52:03Z"
+                ),
+            ]
+        ])
+        let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
+
+        try expect(
+            auth.subscriptionActiveUntil
+                == ISO8601DateFormatter().date(from: "2026-09-28T13:52:03Z"),
+            "未使用当前账户的会员到期日"
+        )
+        try expect(auth.planType == nil, "从其他账户回退了套餐类型")
     }
 
     private static func nearestResetCreditExpiration() throws {
@@ -510,6 +593,48 @@ private struct CodexQuotaCoreTestRunner {
                 timeZone: shanghai
             ) == 1,
             "自然日期跨日应显示 1 天"
+        )
+    }
+
+    private static func staleSubscriptionExpiration() throws {
+        let status = try staleSubscriptionStatus()
+
+        try expect(
+            QuotaDisplayFormatter.subscriptionExpirationText(for: status)
+                == "Pro 到期：待同步",
+            "已过期的上游日期仍被显示为当前会员到期日"
+        )
+    }
+
+    private static func staleSubscriptionFreshness() throws {
+        let status = try staleSubscriptionStatus()
+
+        try expect(
+            QuotaDisplayFormatter.freshnessText(for: status)
+                == "会员到期时间待同步，主额度已更新",
+            "会员日期未同步时仍显示全部数据刚刚更新"
+        )
+    }
+
+    private static func staleSubscriptionStatus() throws -> QuotaStatus {
+        let activeUntil = try require(
+            ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
+            "旧订阅日期无效"
+        )
+        let fetchedAt = try require(
+            ISO8601DateFormatter().date(from: "2026-08-29T08:47:42Z"),
+            "更新时间无效"
+        )
+        return QuotaStatus(
+            remainingPercent: 90,
+            resetsAt: nil,
+            windowDurationMins: 10_080,
+            planType: "pro",
+            subscriptionActiveUntil: activeUntil,
+            resetCreditsAvailableCount: 1,
+            nearestResetCreditExpiresAt: nil,
+            fetchedAt: fetchedAt,
+            warnings: []
         )
     }
 
@@ -987,6 +1112,21 @@ private struct CodexQuotaCoreTestRunner {
             throw CheckFailure(description: message)
         }
         return value
+    }
+
+    private static func fixtureToken(
+        planType: String?,
+        accountID: String,
+        activeUntil: String
+    ) throws -> String {
+        var authClaims: JSONDictionary = [
+            "chatgpt_account_id": accountID,
+            "chatgpt_subscription_active_until": activeUntil,
+        ]
+        authClaims["chatgpt_plan_type"] = planType
+        let payload: JSONDictionary = ["https://api.openai.com/auth": authClaims]
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        return "e30.\(base64URL(payloadData)).fixture-signature"
     }
 
     private static func base64URL(_ data: Data) -> String {

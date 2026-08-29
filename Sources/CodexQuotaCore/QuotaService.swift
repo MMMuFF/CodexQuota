@@ -421,6 +421,19 @@ struct EphemeralAuthContext {
     )
 }
 
+private struct AuthTokenClaims {
+    let accountID: String?
+    let subscriptionActiveUntil: Date?
+    let planType: String?
+
+    init?(token: String?) {
+        guard let token, !token.isEmpty else { return nil }
+        accountID = JWTClaimParser.accountID(from: token)
+        subscriptionActiveUntil = JWTClaimParser.subscriptionActiveUntil(from: token)
+        planType = JWTClaimParser.planType(from: token)
+    }
+}
+
 enum AuthFileParser {
     static func loadCurrent(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -453,17 +466,33 @@ enum AuthFileParser {
         let idToken = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["id_token", "idToken"])
         )
+        let idClaims = AuthTokenClaims(token: idToken)
+        let accessClaims = AuthTokenClaims(token: accessToken)
         let accountID = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["account_id", "accountId"])
-        ) ?? accessToken.flatMap(JWTClaimParser.accountID)
-            ?? idToken.flatMap(JWTClaimParser.accountID)
+        ) ?? accessClaims?.accountID
+            ?? idClaims?.accountID
+        let tokenClaims = [idClaims, accessClaims]
+            .compactMap { $0 }
+            .filter { claims in
+                guard let accountID, let tokenAccountID = claims.accountID else {
+                    return true
+                }
+                return tokenAccountID == accountID
+            }
+        let subscriptionCandidate = tokenClaims
+            .compactMap { claims -> (claims: AuthTokenClaims, activeUntil: Date)? in
+                guard let activeUntil = claims.subscriptionActiveUntil else { return nil }
+                return (claims, activeUntil)
+            }
+            .max { $0.activeUntil < $1.activeUntil }
 
         return EphemeralAuthContext(
             accessToken: accessToken,
             accountID: accountID,
-            subscriptionActiveUntil: idToken.flatMap(JWTClaimParser.subscriptionActiveUntil),
-            planType: idToken.flatMap(JWTClaimParser.planType)
-                ?? accessToken.flatMap(JWTClaimParser.planType)
+            subscriptionActiveUntil: subscriptionCandidate?.activeUntil,
+            planType: subscriptionCandidate?.claims.planType
+                ?? tokenClaims.compactMap(\.planType).first
         )
     }
 }

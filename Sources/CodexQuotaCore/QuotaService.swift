@@ -383,6 +383,10 @@ struct JSONLineReader {
     let handle: FileHandle
     private var buffer = Data()
 
+    init(handle: FileHandle) {
+        self.handle = handle
+    }
+
     mutating func readEnvelopes(untilResponseFor requestID: Int) throws -> [JSONDictionary] {
         var received: [JSONDictionary] = []
         while let envelope = try readEnvelope() {

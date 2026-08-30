@@ -149,22 +149,7 @@ public enum QuotaDisplayFormatter {
     }
 
     private static func paidPlanDisplayName(_ planType: String?) -> String? {
-        switch planType?.lowercased() {
-        case "pro":
-            return "Pro"
-        case "prolite", "pro_lite":
-            return "Pro Lite"
-        case "plus":
-            return "Plus"
-        case "team":
-            return "Team"
-        case "business", "self_serve_business_usage_based":
-            return "Business"
-        case "enterprise", "enterprise_cbp_usage_based":
-            return "Enterprise"
-        default:
-            return nil
-        }
+        SubscriptionPlan.paidDisplayName(planType)
     }
 
     private static func hasUnavailablePaidSubscriptionExpiration(_ status: QuotaStatus) -> Bool {

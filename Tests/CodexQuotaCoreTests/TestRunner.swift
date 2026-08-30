@@ -36,14 +36,23 @@ private struct CodexQuotaCoreTestRunner {
             ("真实 7 天结构得到 39% 剩余", liveRateLimitShape),
             ("多窗口选择最长周期", longestWindowWins),
             ("JWT 订阅字段本机解码", jwtSubscriptionClaim),
+            ("实时订阅响应解析", liveSubscriptionResponse),
+            ("损坏的实时订阅响应被拒绝", malformedLiveSubscriptionRejected),
+            ("实时订阅响应严格校验字段类型", strictLiveSubscriptionSchema),
+            ("实时订阅覆盖旧 Token 日期", liveSubscriptionOverridesStaleToken),
+            ("实时免费套餐清除历史付费日期", liveFreeClearsHistoricalPaidSubscription),
+            ("Token 免费套餐清除历史付费日期", tokenFreeClearsHistoricalPaidSubscription),
             ("较新的会员日期优先", newerSubscriptionClaimWins),
             ("不同账户会员日期不混用", mismatchedSubscriptionClaimIgnored),
+            ("不同账户 Access Token 不用于网络请求", mismatchedAccessTokenRejected),
             ("会员套餐不从其他账户回退", mismatchedPlanFallbackIgnored),
+            ("订阅请求使用同账号只读 GET", subscriptionRequestScope),
             ("重置券选择最早可用到期项", nearestResetCreditExpiration),
             ("app-server 券明细兼容", appServerResetCreditDetails),
             ("消费结果纯解析", consumeOutcomes),
             ("消费请求只含幂等 ID", consumeRequestShape),
             ("重置券请求按账户与时间隔离", resetCreditAccountScope),
+            ("额度读取期间账户变化会被拒绝", accountIdentityTransitionRejected),
             ("重置券接口拒绝重定向", resetCreditRedirectPolicy),
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
             ("北京时间中文短文案", chineseDateFormatting),
@@ -178,6 +187,127 @@ private struct CodexQuotaCoreTestRunner {
         try expect(auth.planType == "pro", "JWT 计划错误")
     }
 
+    private static func liveSubscriptionResponse() throws {
+        let fixture = """
+        {
+          "active_until": "2026-09-28T14:36:25Z",
+          "plan_type": "pro",
+          "will_renew": false,
+          "billing_period": "monthly"
+        }
+        """
+        let data = try require(fixture.data(using: .utf8), "订阅响应编码失败")
+        let subscription = try SubscriptionParser.parseHTTPResponse(data)
+
+        try expect(
+            subscription.activeUntil
+                == ISO8601DateFormatter().date(from: "2026-09-28T14:36:25Z"),
+            "实时会员到期日解析错误"
+        )
+        try expect(subscription.planType == "pro", "实时会员套餐解析错误")
+        try expect(subscription.willRenew == false, "自动续费状态解析错误")
+    }
+
+    private static func malformedLiveSubscriptionRejected() throws {
+        let fixture = """
+        {
+          "active_until": "not-a-date",
+          "plan_type": "pro",
+          "will_renew": false
+        }
+        """
+        let data = try require(fixture.data(using: .utf8), "损坏响应编码失败")
+
+        do {
+            _ = try SubscriptionParser.parseHTTPResponse(data)
+            throw CheckFailure(description: "损坏的实时订阅日期仍被接受")
+        } catch let error as QuotaServiceError {
+            try expect(error == .malformedAppServerResponse, "损坏响应错误类型不正确")
+        }
+    }
+
+    private static func strictLiveSubscriptionSchema() throws {
+        let fixtures = [
+            """
+            {"active_until": true, "plan_type": "pro", "will_renew": false}
+            """,
+            """
+            {"active_until": "2026-09-28T14:36:25Z", "plan_type": "pro", "will_renew": "yes"}
+            """,
+        ]
+
+        for fixture in fixtures {
+            let data = try require(fixture.data(using: .utf8), "严格响应编码失败")
+            do {
+                _ = try SubscriptionParser.parseHTTPResponse(data)
+            } catch let error as QuotaServiceError {
+                try expect(error == .malformedAppServerResponse, "字段类型错误未统一拒绝")
+                continue
+            }
+            throw CheckFailure(description: "非标准订阅字段类型仍被接受")
+        }
+    }
+
+    private static func liveSubscriptionOverridesStaleToken() throws {
+        let staleTokenDate = try require(
+            ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
+            "旧 Token 日期无效"
+        )
+        let liveDate = try require(
+            ISO8601DateFormatter().date(from: "2026-09-28T14:36:25Z"),
+            "实时订阅日期无效"
+        )
+        let resolved = SubscriptionStatusResolver.resolve(
+            appServerPlanType: "pro",
+            tokenPlanType: "pro",
+            tokenActiveUntil: staleTokenDate,
+            live: ParsedSubscriptionSummary(
+                activeUntil: liveDate,
+                planType: "pro",
+                willRenew: false
+            )
+        )
+
+        try expect(resolved.planType == "pro", "未采用实时会员套餐")
+        try expect(resolved.activeUntil == liveDate, "仍采用旧 Token 会员日期")
+    }
+
+    private static func liveFreeClearsHistoricalPaidSubscription() throws {
+        let staleTokenDate = try require(
+            ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
+            "旧 Token 日期无效"
+        )
+        let resolved = SubscriptionStatusResolver.resolve(
+            appServerPlanType: "pro",
+            tokenPlanType: "pro",
+            tokenActiveUntil: staleTokenDate,
+            live: ParsedSubscriptionSummary(
+                activeUntil: staleTokenDate,
+                planType: "free",
+                willRenew: false
+            )
+        )
+
+        try expect(resolved.planType == "free", "未采用实时免费套餐")
+        try expect(resolved.activeUntil == nil, "免费套餐仍保留历史付费日期")
+    }
+
+    private static func tokenFreeClearsHistoricalPaidSubscription() throws {
+        let historicalDate = try require(
+            ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
+            "历史 Token 日期无效"
+        )
+        let resolved = SubscriptionStatusResolver.resolve(
+            appServerPlanType: "free",
+            tokenPlanType: "pro",
+            tokenActiveUntil: historicalDate,
+            live: nil
+        )
+
+        try expect(resolved.planType == "free", "未采用 app-server 免费套餐")
+        try expect(resolved.activeUntil == nil, "Token 历史付费日期仍留在免费套餐")
+    }
+
     private static func newerSubscriptionClaimWins() throws {
         let authData = try JSONSerialization.data(withJSONObject: [
             "tokens": [
@@ -230,6 +360,27 @@ private struct CodexQuotaCoreTestRunner {
         try expect(auth.planType == "pro", "混用了其他账户的套餐类型")
     }
 
+    private static func mismatchedAccessTokenRejected() throws {
+        let authData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "account_id": "account-a",
+                "id_token": try fixtureToken(
+                    planType: "pro",
+                    accountID: "account-a",
+                    activeUntil: "2026-08-28T13:52:03Z"
+                ),
+                "access_token": try fixtureToken(
+                    planType: "plus",
+                    accountID: "account-b",
+                    activeUntil: "2026-09-28T13:52:03Z"
+                ),
+            ]
+        ])
+        let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
+
+        try expect(auth.accessToken == nil, "仍允许其他账户的 Access Token 发起请求")
+    }
+
     private static func mismatchedPlanFallbackIgnored() throws {
         let authData = try JSONSerialization.data(withJSONObject: [
             "tokens": [
@@ -254,6 +405,44 @@ private struct CodexQuotaCoreTestRunner {
             "未使用当前账户的会员到期日"
         )
         try expect(auth.planType == nil, "从其他账户回退了套餐类型")
+    }
+
+    private static func subscriptionRequestScope() throws {
+        let request = try SubscriptionHTTPRequestFactory.makeRequest(
+            accessToken: "fixture-access-token",
+            accountID: "account-a"
+        )
+        let components = try require(
+            URLComponents(url: try require(request.url, "订阅请求缺少 URL"), resolvingAgainstBaseURL: false),
+            "订阅请求 URL 无法解析"
+        )
+
+        try expect(request.httpMethod == "GET", "订阅请求不是只读 GET")
+        try expect(components.scheme == "https", "订阅请求不是 HTTPS")
+        try expect(components.host == "chatgpt.com", "订阅请求主机错误")
+        try expect(components.path == "/backend-api/subscriptions", "订阅请求路径错误")
+        try expect(
+            components.queryItems?.first(where: { $0.name == "account_id" })?.value
+                == "account-a",
+            "订阅请求 query 未使用当前账号"
+        )
+        try expect(
+            request.value(forHTTPHeaderField: "ChatGPT-Account-Id") == "account-a",
+            "订阅请求 header 未使用当前账号"
+        )
+        try expect(
+            request.value(forHTTPHeaderField: "Authorization")
+                == "Bearer fixture-access-token",
+            "订阅请求缺少 Bearer Token"
+        )
+
+        let redirected = URLRequest(
+            url: try require(URL(string: "https://example.com/redirected"), "重定向 URL 无效")
+        )
+        try expect(
+            SubscriptionRedirectPolicy.redirectedRequest(redirected) == nil,
+            "订阅请求仍允许携带凭据重定向"
+        )
     }
 
     private static func nearestResetCreditExpiration() throws {
@@ -452,6 +641,35 @@ private struct CodexQuotaCoreTestRunner {
             ),
             "过期幂等请求仍被复用"
         )
+    }
+
+    private static func accountIdentityTransitionRejected() throws {
+        let accountA = try require(
+            AccountIdentityParser.fingerprint(authAccountID: "account-a"),
+            "账户 A 指纹缺失"
+        )
+        let accountB = try require(
+            AccountIdentityParser.fingerprint(authAccountID: "account-b"),
+            "账户 B 指纹缺失"
+        )
+
+        try AccountIdentityGuard.validateUnchanged(initial: accountA, current: accountA)
+        let transitions: [(String?, String?)] = [
+            (accountA, accountB),
+            (accountA, nil),
+            (nil, accountB),
+        ]
+        for transition in transitions {
+            do {
+                try AccountIdentityGuard.validateUnchanged(
+                    initial: transition.0,
+                    current: transition.1
+                )
+                throw CheckFailure(description: "账户变化后仍接受额度快照")
+            } catch let error as QuotaServiceError {
+                try expect(error == .accountChanged, "账户变化错误类型不正确")
+            }
+        }
     }
 
     private static func resetCreditRedirectPolicy() throws {

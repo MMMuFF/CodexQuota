@@ -7,6 +7,9 @@ public final class QuotaService {
     public init() {}
 
     public func fetch(forceTokenRefresh: Bool) async throws -> QuotaStatus {
+        let initialAccountFingerprint = AccountIdentityParser.fingerprint(
+            authAccountID: AuthFileParser.loadCurrent().accountID
+        )
         let executableURL = try CodexExecutableLocator.locate()
         let messages = AppServerRequestFactory.fetchRequests(
             forceTokenRefresh: forceTokenRefresh
@@ -24,9 +27,25 @@ public final class QuotaService {
         let accountFingerprint = AccountIdentityParser.fingerprint(
             authAccountID: auth.accountID
         )
+        try AccountIdentityGuard.validateUnchanged(
+            initial: initialAccountFingerprint,
+            current: accountFingerprint
+        )
         var warnings: [String] = []
         var availableCount = parsed.resetCreditsAvailableCount
         var nearestExpiration = parsed.nearestResetCreditExpiresAt
+        var liveSubscription: ParsedSubscriptionSummary?
+
+        if let accessToken = auth.accessToken, let accountID = auth.accountID {
+            do {
+                liveSubscription = try await SubscriptionHTTPClient().fetch(
+                    accessToken: accessToken,
+                    accountID: accountID
+                )
+            } catch {
+                liveSubscription = nil
+            }
+        }
 
         let shouldUseHTTPSFallback = nearestExpiration == nil
             && !parsed.hasResetCreditDetails
@@ -64,8 +83,22 @@ public final class QuotaService {
             }
         }
 
-        let planType = parsed.planType ?? auth.planType
-        if auth.subscriptionActiveUntil == nil, planType?.lowercased() == "pro" {
+        let currentFingerprint = AccountIdentityParser.fingerprint(
+            authAccountID: AuthFileParser.loadCurrent().accountID
+        )
+        try AccountIdentityGuard.validateUnchanged(
+            initial: accountFingerprint,
+            current: currentFingerprint
+        )
+
+        let subscription = SubscriptionStatusResolver.resolve(
+            appServerPlanType: parsed.planType,
+            tokenPlanType: auth.planType,
+            tokenActiveUntil: auth.subscriptionActiveUntil,
+            live: liveSubscription
+        )
+        if subscription.activeUntil == nil,
+           subscription.planType?.lowercased() == "pro" {
             warnings.append("未读取到会员到期时间")
         }
 
@@ -73,8 +106,8 @@ public final class QuotaService {
             remainingPercent: parsed.remainingPercent,
             resetsAt: parsed.resetsAt,
             windowDurationMins: parsed.windowDurationMins,
-            planType: planType,
-            subscriptionActiveUntil: auth.subscriptionActiveUntil,
+            planType: subscription.planType,
+            subscriptionActiveUntil: subscription.activeUntil,
             resetCreditsAvailableCount: availableCount,
             nearestResetCreditExpiresAt: nearestExpiration,
             fetchedAt: Date(),
@@ -460,14 +493,14 @@ enum AuthFileParser {
             return nil
         }
 
-        let accessToken = JSONValue.string(
+        let accessTokenCandidate = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["access_token", "accessToken"])
         )
         let idToken = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["id_token", "idToken"])
         )
         let idClaims = AuthTokenClaims(token: idToken)
-        let accessClaims = AuthTokenClaims(token: accessToken)
+        let accessClaims = AuthTokenClaims(token: accessTokenCandidate)
         let accountID = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["account_id", "accountId"])
         ) ?? accessClaims?.accountID
@@ -486,6 +519,9 @@ enum AuthFileParser {
                 return (claims, activeUntil)
             }
             .max { $0.activeUntil < $1.activeUntil }
+        let accessToken = accessClaims?.accountID == accountID
+            ? accessTokenCandidate
+            : nil
 
         return EphemeralAuthContext(
             accessToken: accessToken,
@@ -494,6 +530,79 @@ enum AuthFileParser {
             planType: subscriptionCandidate?.claims.planType
                 ?? tokenClaims.compactMap(\.planType).first
         )
+    }
+}
+
+enum SubscriptionHTTPRequestFactory {
+    static func makeRequest(
+        accessToken: String,
+        accountID: String
+    ) throws -> URLRequest {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "chatgpt.com"
+        components.path = "/backend-api/subscriptions"
+        components.queryItems = [URLQueryItem(name: "account_id", value: accountID)]
+        guard let endpoint = components.url else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+        return request
+    }
+}
+
+private struct SubscriptionHTTPClient {
+    func fetch(
+        accessToken: String,
+        accountID: String
+    ) async throws -> ParsedSubscriptionSummary {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 15
+
+        let delegate = SubscriptionURLSessionDelegate()
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+        defer { session.invalidateAndCancel() }
+
+        let request = try SubscriptionHTTPRequestFactory.makeRequest(
+            accessToken: accessToken,
+            accountID: accountID
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.url?.scheme?.lowercased() == "https",
+              httpResponse.url?.host?.lowercased() == "chatgpt.com",
+              httpResponse.url?.path == "/backend-api/subscriptions",
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+        return try SubscriptionParser.parseHTTPResponse(data)
+    }
+}
+
+private final class SubscriptionURLSessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(SubscriptionRedirectPolicy.redirectedRequest(request))
     }
 }
 

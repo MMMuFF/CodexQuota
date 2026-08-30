@@ -177,6 +177,130 @@ struct ParsedResetCreditSummary {
     let hasDetails: Bool
 }
 
+struct ParsedSubscriptionSummary {
+    let activeUntil: Date?
+    let planType: String?
+    let willRenew: Bool?
+}
+
+struct ResolvedSubscriptionStatus {
+    let planType: String?
+    let activeUntil: Date?
+}
+
+enum SubscriptionPlan {
+    static func paidDisplayName(_ planType: String?) -> String? {
+        switch planType?.lowercased() {
+        case "pro":
+            return "Pro"
+        case "prolite", "pro_lite":
+            return "Pro Lite"
+        case "plus":
+            return "Plus"
+        case "team":
+            return "Team"
+        case "business", "self_serve_business_usage_based":
+            return "Business"
+        case "enterprise", "enterprise_cbp_usage_based":
+            return "Enterprise"
+        default:
+            return nil
+        }
+    }
+}
+
+enum SubscriptionStatusResolver {
+    static func resolve(
+        appServerPlanType: String?,
+        tokenPlanType: String?,
+        tokenActiveUntil: Date?,
+        live: ParsedSubscriptionSummary?
+    ) -> ResolvedSubscriptionStatus {
+        if let live {
+            let planType = live.planType ?? appServerPlanType ?? tokenPlanType
+            return ResolvedSubscriptionStatus(
+                planType: planType,
+                activeUntil: SubscriptionPlan.paidDisplayName(planType) == nil
+                    ? nil
+                    : live.activeUntil
+            )
+        }
+        let planType = appServerPlanType ?? tokenPlanType
+        return ResolvedSubscriptionStatus(
+            planType: planType,
+            activeUntil: SubscriptionPlan.paidDisplayName(planType) == nil
+                ? nil
+                : tokenActiveUntil
+        )
+    }
+}
+
+enum SubscriptionParser {
+    static func parseHTTPResponse(_ data: Data) throws -> ParsedSubscriptionSummary {
+        let response: Response
+        do {
+            response = try JSONDecoder().decode(Response.self, from: data)
+        } catch {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+        guard !response.planType.isEmpty else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+        let activeUntil = try parseActiveUntil(response.activeUntil)
+
+        return ParsedSubscriptionSummary(
+            activeUntil: activeUntil,
+            planType: response.planType,
+            willRenew: response.willRenew
+        )
+    }
+
+    private static func parseActiveUntil(_ value: String?) throws -> Date? {
+        guard let value else { return nil }
+
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) {
+            return date
+        }
+
+        let standard = ISO8601DateFormatter()
+        standard.formatOptions = [.withInternetDateTime]
+        guard let date = standard.date(from: value) else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+        return date
+    }
+
+    private struct Response: Decodable {
+        let activeUntil: String?
+        let planType: String
+        let willRenew: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case activeUntil = "active_until"
+            case planType = "plan_type"
+            case willRenew = "will_renew"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            guard container.contains(.activeUntil) else {
+                throw DecodingError.keyNotFound(
+                    CodingKeys.activeUntil,
+                    DecodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription: "Missing active_until"
+                    )
+                )
+            }
+            activeUntil = try container.decodeIfPresent(String.self, forKey: .activeUntil)
+            planType = try container.decode(String.self, forKey: .planType)
+            willRenew = try container.decodeIfPresent(Bool.self, forKey: .willRenew)
+        }
+    }
+}
+
 enum ResetCreditParser {
     static func parseAppServerSummary(_ value: Any?) -> ParsedResetCreditSummary {
         guard let summary = JSONValue.dictionary(value) else {

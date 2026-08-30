@@ -47,8 +47,8 @@ private struct CodexQuotaCoreTestRunner {
             ("重置券接口拒绝重定向", resetCreditRedirectPolicy),
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
             ("北京时间中文短文案", chineseDateFormatting),
-            ("过期会员日期不再误报", staleSubscriptionExpiration),
-            ("会员日期未同步状态提示", staleSubscriptionFreshness),
+            ("过期付费会员日期标记为暂不可用", staleSubscriptionExpiration),
+            ("过期付费会员日期状态提示", staleSubscriptionFreshness),
             ("免费套餐历史到期日不误报待同步", freePlanHistoricalExpirationIsNeutral),
             ("未知套餐历史到期日不误报待同步", unknownPlanHistoricalExpirationIsNeutral),
             ("重置券未知状态不误报为空", resetCreditPresentationStates),
@@ -603,8 +603,8 @@ private struct CodexQuotaCoreTestRunner {
 
         try expect(
             QuotaDisplayFormatter.subscriptionExpirationText(for: status)
-                == "Pro 到期：待同步",
-            "已过期的上游日期仍被显示为当前会员到期日"
+                == "Pro 到期：暂不可用",
+            "已过期的上游日期仍被显示为当前会员到期日或待同步"
         )
     }
 
@@ -613,8 +613,8 @@ private struct CodexQuotaCoreTestRunner {
 
         try expect(
             QuotaDisplayFormatter.freshnessText(for: status)
-                == "会员到期时间待同步，主额度已更新",
-            "会员日期未同步时仍显示全部数据刚刚更新"
+                == "会员到期时间暂不可用，主额度已更新",
+            "会员日期不可用时仍显示全部数据刚刚更新或待同步"
         )
     }
 

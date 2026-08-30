@@ -104,8 +104,8 @@ public enum QuotaDisplayFormatter {
     }
 
     public static func freshnessText(for status: QuotaStatus) -> String {
-        if hasPendingPaidSubscriptionExpiration(status) {
-            return "会员到期时间待同步，主额度已更新"
+        if hasUnavailablePaidSubscriptionExpiration(status) {
+            return "会员到期时间暂不可用，主额度已更新"
         }
         guard let warning = status.warnings.first else { return "刚刚更新" }
         return "\(warning)，主额度已更新"
@@ -121,8 +121,8 @@ public enum QuotaDisplayFormatter {
         guard let activeUntil = status.subscriptionActiveUntil else {
             return "\(plan) 到期：暂不可用"
         }
-        guard !hasPendingPaidSubscriptionExpiration(status) else {
-            return "\(plan) 到期：待同步"
+        guard !hasUnavailablePaidSubscriptionExpiration(status) else {
+            return "\(plan) 到期：暂不可用"
         }
 
         let days = remainingCalendarDays(
@@ -167,7 +167,7 @@ public enum QuotaDisplayFormatter {
         }
     }
 
-    private static func hasPendingPaidSubscriptionExpiration(_ status: QuotaStatus) -> Bool {
+    private static func hasUnavailablePaidSubscriptionExpiration(_ status: QuotaStatus) -> Bool {
         guard paidPlanDisplayName(status.planType) != nil else { return false }
         guard let activeUntil = status.subscriptionActiveUntil else { return false }
         // OAuth refresh can preserve an older ID Token after a subscription renewal.

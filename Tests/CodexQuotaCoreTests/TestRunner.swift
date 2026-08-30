@@ -49,6 +49,8 @@ private struct CodexQuotaCoreTestRunner {
             ("北京时间中文短文案", chineseDateFormatting),
             ("过期会员日期不再误报", staleSubscriptionExpiration),
             ("会员日期未同步状态提示", staleSubscriptionFreshness),
+            ("免费套餐历史到期日不误报待同步", freePlanHistoricalExpirationIsNeutral),
+            ("未知套餐历史到期日不误报待同步", unknownPlanHistoricalExpirationIsNeutral),
             ("重置券未知状态不误报为空", resetCreditPresentationStates),
             ("选择最前方 Codex 主窗口", overlayWindowSelection),
             ("窗口坐标转换为 AppKit 坐标", overlayCoordinateConversion),
@@ -616,7 +618,35 @@ private struct CodexQuotaCoreTestRunner {
         )
     }
 
-    private static func staleSubscriptionStatus() throws -> QuotaStatus {
+    private static func freePlanHistoricalExpirationIsNeutral() throws {
+        let freeStatus = try staleSubscriptionStatus(planType: "free")
+
+        try expect(
+            QuotaDisplayFormatter.subscriptionExpirationText(for: freeStatus)
+                == "会员到期：暂不可用",
+            "免费套餐仍显示历史会员到期日或待同步"
+        )
+        try expect(
+            QuotaDisplayFormatter.freshnessText(for: freeStatus) == "刚刚更新",
+            "免费套餐仍提示会员到期时间待同步"
+        )
+    }
+
+    private static func unknownPlanHistoricalExpirationIsNeutral() throws {
+        let unknownStatus = try staleSubscriptionStatus(planType: "future_plan")
+
+        try expect(
+            QuotaDisplayFormatter.subscriptionExpirationText(for: unknownStatus)
+                == "会员到期：暂不可用",
+            "未知套餐被默认当成付费套餐"
+        )
+        try expect(
+            QuotaDisplayFormatter.freshnessText(for: unknownStatus) == "刚刚更新",
+            "未知套餐仍提示会员到期时间待同步"
+        )
+    }
+
+    private static func staleSubscriptionStatus(planType: String = "pro") throws -> QuotaStatus {
         let activeUntil = try require(
             ISO8601DateFormatter().date(from: "2026-08-28T13:52:03Z"),
             "旧订阅日期无效"
@@ -629,7 +659,7 @@ private struct CodexQuotaCoreTestRunner {
             remainingPercent: 90,
             resetsAt: nil,
             windowDurationMins: 10_080,
-            planType: "pro",
+            planType: planType,
             subscriptionActiveUntil: activeUntil,
             resetCreditsAvailableCount: 1,
             nearestResetCreditExpiresAt: nil,

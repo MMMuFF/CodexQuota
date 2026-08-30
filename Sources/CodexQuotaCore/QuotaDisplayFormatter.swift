@@ -104,7 +104,7 @@ public enum QuotaDisplayFormatter {
     }
 
     public static func freshnessText(for status: QuotaStatus) -> String {
-        if isSubscriptionExpirationStale(status) {
+        if hasPendingPaidSubscriptionExpiration(status) {
             return "会员到期时间待同步，主额度已更新"
         }
         guard let warning = status.warnings.first else { return "刚刚更新" }
@@ -115,11 +115,13 @@ public enum QuotaDisplayFormatter {
         for status: QuotaStatus,
         timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
     ) -> String {
-        let plan = displayPlanName(status.planType)
+        guard let plan = paidPlanDisplayName(status.planType) else {
+            return "会员到期：暂不可用"
+        }
         guard let activeUntil = status.subscriptionActiveUntil else {
             return "\(plan) 到期：暂不可用"
         }
-        guard !isSubscriptionExpirationStale(status) else {
+        guard !hasPendingPaidSubscriptionExpiration(status) else {
             return "\(plan) 到期：待同步"
         }
 
@@ -146,7 +148,7 @@ public enum QuotaDisplayFormatter {
         )
     }
 
-    private static func displayPlanName(_ planType: String?) -> String {
+    private static func paidPlanDisplayName(_ planType: String?) -> String? {
         switch planType?.lowercased() {
         case "pro":
             return "Pro"
@@ -160,14 +162,13 @@ public enum QuotaDisplayFormatter {
             return "Business"
         case "enterprise", "enterprise_cbp_usage_based":
             return "Enterprise"
-        case let plan?:
-            return plan.prefix(1).uppercased() + plan.dropFirst()
-        case nil:
-            return "会员"
+        default:
+            return nil
         }
     }
 
-    private static func isSubscriptionExpirationStale(_ status: QuotaStatus) -> Bool {
+    private static func hasPendingPaidSubscriptionExpiration(_ status: QuotaStatus) -> Bool {
+        guard paidPlanDisplayName(status.planType) != nil else { return false }
         guard let activeUntil = status.subscriptionActiveUntil else { return false }
         // OAuth refresh can preserve an older ID Token after a subscription renewal.
         return activeUntil <= status.fetchedAt

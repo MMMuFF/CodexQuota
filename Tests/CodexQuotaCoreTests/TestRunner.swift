@@ -45,6 +45,7 @@ private struct CodexQuotaCoreTestRunner {
             ("较新的会员日期优先", newerSubscriptionClaimWins),
             ("不同账户会员日期不混用", mismatchedSubscriptionClaimIgnored),
             ("不同账户 Access Token 不用于网络请求", mismatchedAccessTokenRejected),
+            ("无账号 Claim Token 仅由显式账号绑定", claimlessAccessTokenRequiresExplicitAccountID),
             ("会员套餐不从其他账户回退", mismatchedPlanFallbackIgnored),
             ("订阅请求使用同账号只读 GET", subscriptionRequestScope),
             ("重置券选择最早可用到期项", nearestResetCreditExpiration),
@@ -379,6 +380,66 @@ private struct CodexQuotaCoreTestRunner {
         let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
 
         try expect(auth.accessToken == nil, "仍允许其他账户的 Access Token 发起请求")
+    }
+
+    private static func claimlessAccessTokenRequiresExplicitAccountID() throws {
+        let claimlessActiveUntil = "2026-10-28T13:52:03Z"
+        let payloadData = try JSONSerialization.data(withJSONObject: [
+            "https://api.openai.com/auth": [
+                "chatgpt_plan_type": "plus",
+                "chatgpt_subscription_active_until": claimlessActiveUntil,
+            ]
+        ])
+        let accessToken = "e30.\(base64URL(payloadData)).fixture-signature"
+        let authData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "account_id": "account-a",
+                "access_token": accessToken,
+            ]
+        ])
+        let auth = try require(AuthFileParser.parse(authData), "JWT 解析失败")
+
+        try expect(auth.accountID == "account-a", "未采用显式账号")
+        try expect(auth.accessToken == accessToken, "错误丢弃了同一认证快照中的 Access Token")
+        try expect(auth.planType == "plus", "显式账号未绑定同一认证快照中的套餐")
+        try expect(
+            auth.subscriptionActiveUntil
+                == ISO8601DateFormatter().date(from: claimlessActiveUntil),
+            "显式账号未绑定同一认证快照中的会员日期"
+        )
+
+        let unscopedData = try JSONSerialization.data(withJSONObject: [
+            "tokens": ["access_token": accessToken]
+        ])
+        let unscoped = try require(AuthFileParser.parse(unscopedData), "无账号 JWT 解析失败")
+        try expect(unscoped.accountID == nil, "无账号认证快照意外产生账号")
+        try expect(unscoped.accessToken == nil, "无账号认证快照错误保留 Access Token")
+        try expect(unscoped.planType == nil, "无账号认证快照错误保留套餐")
+        try expect(unscoped.subscriptionActiveUntil == nil, "无账号认证快照错误保留会员日期")
+
+        let scopedIDTokenActiveUntil = "2026-09-28T13:52:03Z"
+        let idTokenScopedData = try JSONSerialization.data(withJSONObject: [
+            "tokens": [
+                "id_token": try fixtureToken(
+                    planType: "pro",
+                    accountID: "account-a",
+                    activeUntil: scopedIDTokenActiveUntil
+                ),
+                "access_token": accessToken,
+            ]
+        ])
+        let idTokenScoped = try require(
+            AuthFileParser.parse(idTokenScopedData),
+            "ID Token 账号 JWT 解析失败"
+        )
+        try expect(idTokenScoped.accountID == "account-a", "未采用 ID Token 账号")
+        try expect(idTokenScoped.accessToken == nil, "无显式账号时错误保留无账号 Claim Token")
+        try expect(idTokenScoped.planType == "pro", "无账号 Claim Token 覆盖了 ID Token 套餐")
+        try expect(
+            idTokenScoped.subscriptionActiveUntil
+                == ISO8601DateFormatter().date(from: scopedIDTokenActiveUntil),
+            "无账号 Claim Token 覆盖了 ID Token 会员日期"
+        )
     }
 
     private static func mismatchedPlanFallbackIgnored() throws {

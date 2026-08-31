@@ -505,17 +505,18 @@ enum AuthFileParser {
         )
         let idClaims = AuthTokenClaims(token: idToken)
         let accessClaims = AuthTokenClaims(token: accessTokenCandidate)
-        let accountID = JSONValue.string(
+        let explicitAccountID = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["account_id", "accountId"])
-        ) ?? accessClaims?.accountID
+        )
+        let accountID = explicitAccountID ?? accessClaims?.accountID
             ?? idClaims?.accountID
         let tokenClaims = [idClaims, accessClaims]
             .compactMap { $0 }
             .filter { claims in
-                guard let accountID, let tokenAccountID = claims.accountID else {
-                    return true
+                if let tokenAccountID = claims.accountID {
+                    return tokenAccountID == accountID
                 }
-                return tokenAccountID == accountID
+                return explicitAccountID != nil
             }
         let subscriptionCandidate = tokenClaims
             .compactMap { claims -> (claims: AuthTokenClaims, activeUntil: Date)? in
@@ -523,9 +524,13 @@ enum AuthFileParser {
                 return (claims, activeUntil)
             }
             .max { $0.activeUntil < $1.activeUntil }
-        let accessToken = accessClaims?.accountID == accountID
-            ? accessTokenCandidate
-            : nil
+        let accessTokenIsAccountScoped: Bool
+        if let tokenAccountID = accessClaims?.accountID {
+            accessTokenIsAccountScoped = tokenAccountID == accountID
+        } else {
+            accessTokenIsAccountScoped = explicitAccountID != nil
+        }
+        let accessToken = accessTokenIsAccountScoped ? accessTokenCandidate : nil
 
         return EphemeralAuthContext(
             accessToken: accessToken,

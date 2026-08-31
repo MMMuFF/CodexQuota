@@ -57,6 +57,9 @@ private struct CodexQuotaCoreTestRunner {
             ("重置券接口拒绝重定向", resetCreditRedirectPolicy),
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
             ("北京时间中文短文案", chineseDateFormatting),
+            ("时间与额度进度使用统一已消耗口径", comparableQuotaProgress),
+            ("周期均速预测本周期额度耗尽时间", quotaExhaustionForecast),
+            ("周期均速预测使用精简中文文案", quotaExhaustionForecastText),
             ("过期付费会员日期标记为暂不可用", staleSubscriptionExpiration),
             ("过期付费会员日期状态提示", staleSubscriptionFreshness),
             ("免费套餐历史到期日不误报待同步", freePlanHistoricalExpirationIsNeutral),
@@ -874,6 +877,220 @@ private struct CodexQuotaCoreTestRunner {
                 timeZone: shanghai
             ) == 1,
             "自然日期跨日应显示 1 天"
+        )
+    }
+
+    private static func comparableQuotaProgress() throws {
+        let fetchedAt = try require(
+            ISO8601DateFormatter().date(from: "2026-09-01T00:00:00Z"),
+            "更新时间无效"
+        )
+        let resetsAt = fetchedAt.addingTimeInterval(3.5 * 24 * 60 * 60)
+        let status = QuotaStatus(
+            remainingPercent: 80,
+            resetsAt: resetsAt,
+            windowDurationMins: 10_080,
+            planType: "pro",
+            subscriptionActiveUntil: nil,
+            resetCreditsAvailableCount: nil,
+            nearestResetCreditExpiresAt: nil,
+            fetchedAt: fetchedAt,
+            warnings: []
+        )
+
+        let progress = try require(
+            QuotaCycleProgress.calculate(for: status),
+            "完整周期数据未生成进度"
+        )
+        try expect(abs(progress.timeElapsedFraction - 0.5) < 0.000_001, "时间进度错误")
+        try expect(abs(progress.quotaUsedFraction - 0.2) < 0.000_001, "额度进度错误")
+        try expect(progress.timeElapsedPercent == 50, "时间百分比错误")
+        try expect(progress.quotaUsedPercent == 20, "额度百分比错误")
+
+        let incomplete = QuotaStatus(
+            remainingPercent: status.remainingPercent,
+            resetsAt: nil,
+            windowDurationMins: status.windowDurationMins,
+            planType: status.planType,
+            subscriptionActiveUntil: status.subscriptionActiveUntil,
+            resetCreditsAvailableCount: status.resetCreditsAvailableCount,
+            nearestResetCreditExpiresAt: status.nearestResetCreditExpiresAt,
+            fetchedAt: status.fetchedAt,
+            warnings: []
+        )
+        try expect(
+            QuotaCycleProgress.calculate(for: incomplete) == nil,
+            "缺失重置时间时仍生成不可比较的进度"
+        )
+
+        func boundaryStatus(resetOffset: TimeInterval) -> QuotaStatus {
+            QuotaStatus(
+                remainingPercent: status.remainingPercent,
+                resetsAt: fetchedAt.addingTimeInterval(resetOffset),
+                windowDurationMins: status.windowDurationMins,
+                planType: status.planType,
+                subscriptionActiveUntil: status.subscriptionActiveUntil,
+                resetCreditsAvailableCount: status.resetCreditsAvailableCount,
+                nearestResetCreditExpiresAt: status.nearestResetCreditExpiresAt,
+                fetchedAt: fetchedAt,
+                warnings: []
+            )
+        }
+
+        try expect(
+            QuotaCycleProgress.calculate(for: boundaryStatus(resetOffset: -1)) == nil,
+            "过期周期仍被误画成有效进度"
+        )
+        try expect(
+            QuotaCycleProgress.calculate(for: boundaryStatus(resetOffset: 0)) == nil,
+            "正好到达重置点时仍生成已结束周期的进度"
+        )
+
+        let oneSecondBeforeReset = try require(
+            QuotaCycleProgress.calculate(for: boundaryStatus(resetOffset: 1)),
+            "重置前一秒未生成有效进度"
+        )
+        try expect(
+            oneSecondBeforeReset.timeElapsedFraction < 1,
+            "重置前一秒被提前夹成 100%"
+        )
+        try expect(
+            QuotaCycleProgress.calculate(
+                for: boundaryStatus(resetOffset: 10_080 * 60 + 1)
+            ) == nil,
+            "尚未开始的异常未来周期仍生成进度"
+        )
+    }
+
+    private static func quotaExhaustionForecast() throws {
+        let fetchedAt = try require(
+            ISO8601DateFormatter().date(from: "2026-09-01T00:00:00Z"),
+            "更新时间无效"
+        )
+        let resetsAt = fetchedAt.addingTimeInterval(3.5 * 24 * 60 * 60)
+
+        func status(remainingPercent: Int) -> QuotaStatus {
+            QuotaStatus(
+                remainingPercent: remainingPercent,
+                resetsAt: resetsAt,
+                windowDurationMins: 10_080,
+                planType: "pro",
+                subscriptionActiveUntil: nil,
+                resetCreditsAvailableCount: nil,
+                nearestResetCreditExpiresAt: nil,
+                fetchedAt: fetchedAt,
+                warnings: []
+            )
+        }
+
+        let fastProgress = try require(
+            QuotaCycleProgress.calculate(for: status(remainingPercent: 30)),
+            "快速消耗状态未生成进度"
+        )
+        let expectedExhaustionAt = fetchedAt.addingTimeInterval(1.5 * 24 * 60 * 60)
+        try expect(
+            fastProgress.exhaustionForecast == .estimated(expectedExhaustionAt),
+            "重置前耗尽时间预测错误"
+        )
+
+        let exactResetProgress = try require(
+            QuotaCycleProgress.calculate(for: status(remainingPercent: 50)),
+            "等速消耗状态未生成进度"
+        )
+        try expect(
+            exactResetProgress.exhaustionForecast == .estimated(resetsAt),
+            "恰好在重置点用完时被误判为本轮用不完"
+        )
+
+        let exhaustedProgress = try require(
+            QuotaCycleProgress.calculate(for: status(remainingPercent: 0)),
+            "额度已用完状态未生成进度"
+        )
+        try expect(
+            exhaustedProgress.exhaustionForecast == .estimated(fetchedAt),
+            "额度已用完时未指向当前更新时间"
+        )
+
+        let slowProgress = try require(
+            QuotaCycleProgress.calculate(for: status(remainingPercent: 80)),
+            "慢速消耗状态未生成进度"
+        )
+        try expect(
+            slowProgress.exhaustionForecast == .afterReset,
+            "预计跨过重置时间时仍显示了本轮耗尽日期"
+        )
+
+        let unusedProgress = try require(
+            QuotaCycleProgress.calculate(for: status(remainingPercent: 100)),
+            "未消耗状态未生成进度"
+        )
+        try expect(
+            unusedProgress.exhaustionForecast == .unavailable,
+            "尚未消耗额度时仍生成了耗尽预测"
+        )
+    }
+
+    private static func quotaExhaustionForecastText() throws {
+        let fetchedAt = try require(
+            ISO8601DateFormatter().date(from: "2026-09-01T00:00:00Z"),
+            "预测文案基准时间无效"
+        )
+        let resetsAt = fetchedAt.addingTimeInterval(3.5 * 24 * 60 * 60)
+        let shanghai = try require(TimeZone(identifier: "Asia/Shanghai"), "缺少上海时区")
+
+        func status(remainingPercent: Int?) -> QuotaStatus {
+            QuotaStatus(
+                remainingPercent: remainingPercent,
+                resetsAt: resetsAt,
+                windowDurationMins: 10_080,
+                planType: "pro",
+                subscriptionActiveUntil: nil,
+                resetCreditsAvailableCount: nil,
+                nearestResetCreditExpiresAt: nil,
+                fetchedAt: fetchedAt,
+                warnings: []
+            )
+        }
+
+        try expect(
+            QuotaDisplayFormatter.exhaustionForecastText(
+                for: status(remainingPercent: 30),
+                timeZone: shanghai
+            ) == "按周期均速，预计 9月2日 20:00 用完",
+            "预计用完时间文案错误"
+        )
+        try expect(
+            QuotaDisplayFormatter.exhaustionForecastText(
+                for: status(remainingPercent: 80),
+                timeZone: shanghai
+            ) == "按周期均速，本轮预计用不完",
+            "本周期用不完文案错误"
+        )
+        try expect(
+            QuotaDisplayFormatter.exhaustionForecastText(
+                for: status(remainingPercent: 100),
+                timeZone: shanghai
+            ) == "按周期均速，暂无法估算",
+            "暂无消耗时的预测文案错误"
+        )
+
+        let endedStatus = QuotaStatus(
+            remainingPercent: 80,
+            resetsAt: fetchedAt,
+            windowDurationMins: 10_080,
+            planType: "pro",
+            subscriptionActiveUntil: nil,
+            resetCreditsAvailableCount: nil,
+            nearestResetCreditExpiresAt: nil,
+            fetchedAt: fetchedAt,
+            warnings: []
+        )
+        try expect(
+            QuotaDisplayFormatter.exhaustionForecastText(
+                for: endedStatus,
+                timeZone: shanghai
+            ) == "按周期均速，暂无法估算",
+            "已结束周期仍显示未来式预测"
         )
     }
 

@@ -111,6 +111,24 @@ public enum QuotaDisplayFormatter {
         return "\(warning)，主额度已更新"
     }
 
+    public static func exhaustionForecastText(
+        for status: QuotaStatus,
+        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+    ) -> String {
+        guard let progress = QuotaCycleProgress.calculate(for: status) else {
+            return "按周期均速，暂无法估算"
+        }
+
+        switch progress.exhaustionForecast {
+        case let .estimated(date):
+            return "按周期均速，预计 \(monthDayTime(date, timeZone: timeZone)) 用完"
+        case .afterReset:
+            return "按周期均速，本轮预计用不完"
+        case .unavailable:
+            return "按周期均速，暂无法估算"
+        }
+    }
+
     public static func subscriptionExpirationText(
         for status: QuotaStatus,
         timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!

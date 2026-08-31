@@ -9,6 +9,15 @@ final class QuotaPopoverViewController: NSViewController {
     var onHoverChanged: ((Bool) -> Void)?
 
     private let summaryLabel = NSTextField(labelWithString: "-- · 读取中")
+    private let timeProgressRow = QuotaProgressRowView(
+        title: "时间",
+        accessibilityLabel: "时间已过"
+    )
+    private let quotaProgressRow = QuotaProgressRowView(
+        title: "额度",
+        accessibilityLabel: "额度已用"
+    )
+    private let forecastLabel = NSTextField(labelWithString: "按周期均速，暂无法估算")
     private let subscriptionLabel = NSTextField(labelWithString: "会员到期：读取中")
     private let resetCreditLabel = NSTextField(labelWithString: "最早到期券：读取中")
     private let freshnessLabel = NSTextField(labelWithString: "正在连接 Codex…")
@@ -41,6 +50,10 @@ final class QuotaPopoverViewController: NSViewController {
         freshnessLabel.textColor = .secondaryLabelColor
         freshnessLabel.lineBreakMode = .byTruncatingTail
 
+        forecastLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        forecastLabel.textColor = .secondaryLabelColor
+        forecastLabel.lineBreakMode = .byTruncatingTail
+
         useButton.bezelStyle = .rounded
         useButton.controlSize = .regular
         useButton.target = self
@@ -62,6 +75,16 @@ final class QuotaPopoverViewController: NSViewController {
         detailStack.alignment = .leading
         detailStack.spacing = 7
 
+        let progressStack = NSStackView(views: [timeProgressRow, quotaProgressRow])
+        progressStack.orientation = .vertical
+        progressStack.alignment = .leading
+        progressStack.spacing = 6
+
+        let progressSection = NSStackView(views: [progressStack, forecastLabel])
+        progressSection.orientation = .vertical
+        progressSection.alignment = .leading
+        progressSection.spacing = 6
+
         let secondaryActions = NSStackView(views: [refreshButton, quitButton])
         secondaryActions.orientation = .horizontal
         secondaryActions.alignment = .centerY
@@ -72,7 +95,9 @@ final class QuotaPopoverViewController: NSViewController {
         actionRow.alignment = .centerY
         actionRow.spacing = 8
 
-        let stack = NSStackView(views: [summaryLabel, detailStack, freshnessLabel, actionRow])
+        let stack = NSStackView(
+            views: [summaryLabel, progressSection, detailStack, freshnessLabel, actionRow]
+        )
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 11
@@ -85,12 +110,17 @@ final class QuotaPopoverViewController: NSViewController {
             stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 15),
             stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
             actionRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            progressSection.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            progressStack.widthAnchor.constraint(equalTo: progressSection.widthAnchor),
+            timeProgressRow.widthAnchor.constraint(equalTo: progressStack.widthAnchor),
+            quotaProgressRow.widthAnchor.constraint(equalTo: progressStack.widthAnchor),
+            forecastLabel.widthAnchor.constraint(equalTo: progressSection.widthAnchor),
             detailStack.widthAnchor.constraint(equalTo: stack.widthAnchor),
             freshnessLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
 
         view = root
-        preferredContentSize = NSSize(width: 316, height: 166)
+        preferredContentSize = NSSize(width: 316, height: 230)
     }
 
     func showLoading(previousStatus: QuotaStatus?) {
@@ -107,6 +137,11 @@ final class QuotaPopoverViewController: NSViewController {
             timeZone: timeZone
         )
         resetCreditLabel.stringValue = QuotaDisplayFormatter.resetCreditDetailText(
+            for: status,
+            timeZone: timeZone
+        )
+        updateProgress(QuotaCycleProgress.calculate(for: status))
+        forecastLabel.stringValue = QuotaDisplayFormatter.exhaustionForecastText(
             for: status,
             timeZone: timeZone
         )
@@ -130,6 +165,8 @@ final class QuotaPopoverViewController: NSViewController {
             summaryLabel.stringValue = "-- · 读取失败"
             subscriptionLabel.stringValue = "会员到期：暂不可用"
             resetCreditLabel.stringValue = "重置券：暂不可用"
+            updateProgress(nil)
+            forecastLabel.stringValue = "按周期均速，暂无法估算"
             freshnessLabel.stringValue = "请确认 Codex 已登录后重试"
             useButton.title = "重置券暂不可用"
             useButton.isEnabled = false
@@ -152,6 +189,17 @@ final class QuotaPopoverViewController: NSViewController {
         freshnessLabel.stringValue = message
     }
 
+    private func updateProgress(_ progress: QuotaCycleProgress?) {
+        timeProgressRow.update(
+            fraction: progress?.timeElapsedFraction,
+            percent: progress?.timeElapsedPercent
+        )
+        quotaProgressRow.update(
+            fraction: progress?.quotaUsedFraction,
+            percent: progress?.quotaUsedPercent
+        )
+    }
+
     @objc private func useResetCredit() {
         onUseResetCredit?()
     }
@@ -162,6 +210,83 @@ final class QuotaPopoverViewController: NSViewController {
 
     @objc private func quit() {
         onQuit?()
+    }
+}
+
+private final class QuotaProgressRowView: NSStackView {
+    private let titleLabel: NSTextField
+    private let progressIndicator = NSProgressIndicator()
+    private let percentLabel = NSTextField(labelWithString: "--")
+    private let progressAccessibilityLabel: String
+
+    init(title: String, accessibilityLabel: String) {
+        titleLabel = NSTextField(labelWithString: title)
+        progressAccessibilityLabel = accessibilityLabel
+        super.init(frame: .zero)
+
+        orientation = .horizontal
+        alignment = .centerY
+        spacing = 8
+
+        titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.setAccessibilityElement(false)
+
+        progressIndicator.style = .bar
+        progressIndicator.controlSize = .small
+        progressIndicator.isIndeterminate = false
+        progressIndicator.minValue = 0
+        progressIndicator.maxValue = 1
+        progressIndicator.doubleValue = 0
+        progressIndicator.setAccessibilityElement(false)
+        progressIndicator.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        percentLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        percentLabel.textColor = .secondaryLabelColor
+        percentLabel.alignment = .right
+        percentLabel.setAccessibilityElement(false)
+
+        addArrangedSubview(titleLabel)
+        addArrangedSubview(progressIndicator)
+        addArrangedSubview(percentLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.widthAnchor.constraint(equalToConstant: 32),
+            progressIndicator.heightAnchor.constraint(equalToConstant: 8),
+            progressIndicator.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
+            percentLabel.widthAnchor.constraint(equalToConstant: 34),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
+        ])
+
+        setUnavailable()
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(fraction: Double?, percent: Int?) {
+        guard let fraction, let percent else {
+            setUnavailable()
+            return
+        }
+
+        progressIndicator.doubleValue = fraction
+        percentLabel.stringValue = "\(percent)%"
+        setAccessibilityElement(false)
+        progressIndicator.setAccessibilityElement(true)
+        progressIndicator.setAccessibilityLabel(progressAccessibilityLabel)
+        progressIndicator.setAccessibilityValueDescription("\(percent)%")
+    }
+
+    private func setUnavailable() {
+        progressIndicator.doubleValue = 0
+        percentLabel.stringValue = "--"
+        progressIndicator.setAccessibilityElement(false)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel("\(progressAccessibilityLabel)：暂不可用")
     }
 }
 

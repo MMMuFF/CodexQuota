@@ -129,6 +129,17 @@ public enum QuotaDisplayFormatter {
         }
     }
 
+    public static func usageDeviationAccessibilityText(
+        _ deviation: QuotaUsageDeviation
+    ) -> String {
+        let roundedMagnitude = Int(abs(deviation.signedPercentagePoints).rounded())
+        guard roundedMagnitude > 0 else {
+            return "额度消耗与时间进度一致"
+        }
+        let direction = deviation.signedPercentagePoints > 0 ? "快" : "慢"
+        return "额度消耗比时间进度\(direction) \(roundedMagnitude) 个百分点"
+    }
+
     public static func subscriptionExpirationText(
         for status: QuotaStatus,
         timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!

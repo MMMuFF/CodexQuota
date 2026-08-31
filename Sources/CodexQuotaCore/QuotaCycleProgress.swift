@@ -6,6 +6,28 @@ public enum QuotaExhaustionForecast: Equatable, Sendable {
     case unavailable
 }
 
+public enum QuotaUsageDeviationBand: Equatable, Sendable {
+    case within25
+    case over25
+    case over50
+}
+
+public struct QuotaUsageDeviation: Equatable, Sendable {
+    public let signedPercentagePoints: Double
+
+    public init(signedPercentagePoints: Double) {
+        self.signedPercentagePoints = signedPercentagePoints
+    }
+
+    public var band: QuotaUsageDeviationBand {
+        let magnitude = abs(signedPercentagePoints)
+        let boundaryTolerance = 1e-9
+        if magnitude > 50 + boundaryTolerance { return .over50 }
+        if magnitude > 25 + boundaryTolerance { return .over25 }
+        return .within25
+    }
+}
+
 public struct QuotaCycleProgress: Equatable, Sendable {
     public let timeElapsedFraction: Double
     public let quotaUsedFraction: Double
@@ -17,6 +39,12 @@ public struct QuotaCycleProgress: Equatable, Sendable {
 
     public var quotaUsedPercent: Int {
         Int((quotaUsedFraction * 100).rounded())
+    }
+
+    public var usageDeviation: QuotaUsageDeviation {
+        QuotaUsageDeviation(
+            signedPercentagePoints: (quotaUsedFraction - timeElapsedFraction) * 100
+        )
     }
 
     public static func calculate(for status: QuotaStatus) -> QuotaCycleProgress? {

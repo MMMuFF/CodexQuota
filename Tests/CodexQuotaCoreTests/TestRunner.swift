@@ -58,6 +58,7 @@ private struct CodexQuotaCoreTestRunner {
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
             ("北京时间中文短文案", chineseDateFormatting),
             ("时间与额度进度使用统一已消耗口径", comparableQuotaProgress),
+            ("额度与时间偏差使用严格颜色阈值", quotaUsageDeviationBands),
             ("周期均速预测本周期额度耗尽时间", quotaExhaustionForecast),
             ("周期均速预测使用精简中文文案", quotaExhaustionForecastText),
             ("过期付费会员日期标记为暂不可用", staleSubscriptionExpiration),
@@ -959,6 +960,61 @@ private struct CodexQuotaCoreTestRunner {
                 for: boundaryStatus(resetOffset: 10_080 * 60 + 1)
             ) == nil,
             "尚未开始的异常未来周期仍生成进度"
+        )
+    }
+
+    private static func quotaUsageDeviationBands() throws {
+        let fixtures: [(Double, QuotaUsageDeviationBand)] = [
+            (0, .within25),
+            (25, .within25),
+            (-25, .within25),
+            (25.000_000_000_1, .within25),
+            (25.01, .over25),
+            (-25.01, .over25),
+            (50, .over25),
+            (-50, .over25),
+            (50.000_000_000_1, .over25),
+            (50.01, .over50),
+            (-50.01, .over50),
+        ]
+
+        for fixture in fixtures {
+            let deviation = QuotaUsageDeviation(
+                signedPercentagePoints: fixture.0
+            )
+            try expect(
+                deviation.band == fixture.1,
+                "偏差 \(fixture.0) 的颜色等级错误"
+            )
+        }
+
+        let progress = QuotaCycleProgress(
+            timeElapsedFraction: 0.4,
+            quotaUsedFraction: 0.7,
+            exhaustionForecast: .afterReset
+        )
+        try expect(
+            abs(progress.usageDeviation.signedPercentagePoints - 30) < 0.000_001,
+            "未按额度已用减时间已过计算有符号偏差"
+        )
+        try expect(progress.usageDeviation.band == .over25, "进度偏差未进入橙色等级")
+        try expect(
+            QuotaDisplayFormatter.usageDeviationAccessibilityText(
+                QuotaUsageDeviation(signedPercentagePoints: 30)
+            ) == "额度消耗比时间进度快 30 个百分点",
+            "正偏差辅助功能文案错误"
+        )
+        try expect(
+            QuotaDisplayFormatter.usageDeviationAccessibilityText(
+                QuotaUsageDeviation(signedPercentagePoints: -30)
+            ) == "额度消耗比时间进度慢 30 个百分点",
+            "负偏差辅助功能文案错误"
+        )
+        try expect(
+            QuotaDisplayFormatter.usageDeviationAccessibilityText(
+                QuotaUsageDeviation(signedPercentagePoints: 0)
+            ) == "额度消耗与时间进度一致",
+            "零偏差辅助功能文案错误"
         )
     }
 

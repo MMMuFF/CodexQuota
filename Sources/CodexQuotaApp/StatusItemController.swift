@@ -32,6 +32,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var lastKnownTrailingControlMinX: CGFloat?
     private var standardChipTitle = "-- · 读取中"
     private var standardChipTooltip = "正在读取 Codex 额度"
+    private var standardChipDeviation: QuotaUsageDeviation?
 
     override init() {
         super.init()
@@ -248,7 +249,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             overlayPanel.chipView.setNeedsAttention(true)
             overlayPanel.chipView.update(
                 title: "请开启辅助功能",
-                tooltip: "点击打开系统设置，授权后将自动恢复 Codex 额度"
+                tooltip: "点击打开系统设置，授权后将自动恢复 Codex 额度",
+                usageDeviation: nil
             )
         }
 
@@ -275,7 +277,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         overlayPanel.chipView.update(
             title: standardChipTitle,
-            tooltip: standardChipTooltip
+            tooltip: standardChipTooltip,
+            usageDeviation: standardChipDeviation
         )
     }
 
@@ -315,10 +318,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private func updateDisplay(with status: QuotaStatus) {
         let title = QuotaDisplayFormatter.mainTitle(for: status, timeZone: .current)
         let tooltip = QuotaDisplayFormatter.tooltip(for: status, timeZone: .current)
+        let deviation = QuotaCycleProgress.calculate(for: status)?.usageDeviation
         standardChipTitle = title
         standardChipTooltip = tooltip
+        standardChipDeviation = deviation
         if !isShowingAccessibilityPrompt {
-            overlayPanel.chipView.update(title: title, tooltip: tooltip)
+            overlayPanel.chipView.update(
+                title: title,
+                tooltip: tooltip,
+                usageDeviation: deviation
+            )
         }
         popoverController.update(status: status, timeZone: .current)
     }
@@ -328,10 +337,12 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         guard currentStatus == nil else { return }
         standardChipTitle = "-- · 读取失败"
         standardChipTooltip = "Codex 额度读取失败；点击后可重试"
+        standardChipDeviation = nil
         if !isShowingAccessibilityPrompt {
             overlayPanel.chipView.update(
                 title: standardChipTitle,
-                tooltip: standardChipTooltip
+                tooltip: standardChipTooltip,
+                usageDeviation: nil
             )
         }
     }

@@ -10,7 +10,7 @@
 </p>
 <p align="center"><sub>昵称旁常显：剩余额度 · 刷新日期 · 剩余天数（演示数据）</sub></p>
 
-鼠标悬停后可查看会员到期时间、额度刷新时间和最早到期重置券，并可手动刷新或在二次确认后使用一张重置券。
+鼠标悬停后可查看时间/额度进度、预计耗尽时间、会员到期时间、额度刷新时间和最早到期重置券，并可手动刷新或在二次确认后使用一张重置券。
 
 <p align="center">
   <img
@@ -21,11 +21,13 @@
 <p align="center"><sub>悬停详情：具体刷新时间、会员到期与最早到期重置券（演示数据）</sub></p>
 
 > [!IMPORTANT]
-> 当前提供的是源码本地构建方式，没有 Developer ID 公证安装器。默认产物使用 ad-hoc 签名，适合自行检查源码后在本机使用；重新构建后，macOS 可能要求重新授权辅助功能。
+> Release ZIP 和源码本地构建产物均使用 ad-hoc 签名，没有 Developer ID 公证。请仅从本仓库 Release 下载，或检查源码后自行构建；更换或重新构建应用后，macOS 可能要求重新授权辅助功能。
 
 ## 功能
 
 - 显示当前额度剩余百分比、刷新日期/具体时间和剩余天数
+- 对比本周期时间进度与额度消耗进度，并按当前周期均速显示预计耗尽时间
+- 常显额度下方用中性、橙色或红色细线提示额度消耗相对时间进度的偏差
 - 根据当前会员类型显示 Plus、Pro 等会员到期时间
 - 续费后优先读取当前账户的实时订阅日期，不再沿用旧 Token 日期
 - 显示最早到期重置券及可用数量
@@ -39,6 +41,7 @@
 ## 系统要求
 
 - macOS 13 或更高版本
+- Release ZIP 适用于 Apple Silicon（M 系列）Mac；Intel Mac 请在目标机器上从源码构建
 - Xcode Command Line Tools 与 Swift 5.9+
 - Codex Desktop 已安装到 `/Applications/ChatGPT.app`
 - 已在 Codex 中登录 ChatGPT 账户
@@ -53,6 +56,16 @@ swift --version
 如果第一条命令失败，可运行 `xcode-select --install`，按 macOS 提示完成安装。
 
 ## 安装
+
+### 下载 Release（推荐）
+
+1. 在 Apple Silicon（M 系列）Mac 上，从 [最新 Release](https://github.com/MMMuFF/CodexQuota/releases/latest) 下载 `CodexQuota.zip`。
+2. 解压后将 `CodexQuota.app` 拖入 macOS 的“应用程序”文件夹。
+3. 首次打开若 macOS 无法验证开发者，请在确认下载来源后按住 Control 键点按应用，选择“打开”，再按系统提示确认。
+
+Release ZIP 使用 ad-hoc 签名且未经 Apple 公证。它会在打开前经过 macOS Gatekeeper 检查，但不能提供已验证开发者身份；如需完整审查，可按下方步骤从源码构建。
+
+### 从源码安装
 
 ```bash
 git clone https://github.com/MMMuFF/CodexQuota.git

@@ -104,16 +104,53 @@ public enum QuotaDisplayFormatter {
     }
 
     public static func freshnessText(for status: QuotaStatus) -> String {
+        if hasUnavailablePaidSubscriptionExpiration(status) {
+            return "会员到期时间暂不可用，主额度已更新"
+        }
         guard let warning = status.warnings.first else { return "刚刚更新" }
         return "\(warning)，主额度已更新"
+    }
+
+    public static func exhaustionForecastText(
+        for status: QuotaStatus,
+        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+    ) -> String {
+        guard let progress = QuotaCycleProgress.calculate(for: status) else {
+            return "按周期均速，暂无法估算"
+        }
+
+        switch progress.exhaustionForecast {
+        case let .estimated(date):
+            return "按周期均速，预计 \(monthDayTime(date, timeZone: timeZone)) 用完"
+        case .afterReset:
+            return "按周期均速，本轮预计用不完"
+        case .unavailable:
+            return "按周期均速，暂无法估算"
+        }
+    }
+
+    public static func usageDeviationAccessibilityText(
+        _ deviation: QuotaUsageDeviation
+    ) -> String {
+        let roundedMagnitude = Int(abs(deviation.signedPercentagePoints).rounded())
+        guard roundedMagnitude > 0 else {
+            return "额度消耗与时间进度一致"
+        }
+        let direction = deviation.signedPercentagePoints > 0 ? "快" : "慢"
+        return "额度消耗比时间进度\(direction) \(roundedMagnitude) 个百分点"
     }
 
     public static func subscriptionExpirationText(
         for status: QuotaStatus,
         timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
     ) -> String {
-        let plan = displayPlanName(status.planType)
+        guard let plan = paidPlanDisplayName(status.planType) else {
+            return "会员到期：暂不可用"
+        }
         guard let activeUntil = status.subscriptionActiveUntil else {
+            return "\(plan) 到期：暂不可用"
+        }
+        guard !hasUnavailablePaidSubscriptionExpiration(status) else {
             return "\(plan) 到期：暂不可用"
         }
 
@@ -140,25 +177,15 @@ public enum QuotaDisplayFormatter {
         )
     }
 
-    private static func displayPlanName(_ planType: String?) -> String {
-        switch planType?.lowercased() {
-        case "pro":
-            return "Pro"
-        case "prolite", "pro_lite":
-            return "Pro Lite"
-        case "plus":
-            return "Plus"
-        case "team":
-            return "Team"
-        case "business", "self_serve_business_usage_based":
-            return "Business"
-        case "enterprise", "enterprise_cbp_usage_based":
-            return "Enterprise"
-        case let plan?:
-            return plan.prefix(1).uppercased() + plan.dropFirst()
-        case nil:
-            return "会员"
-        }
+    private static func paidPlanDisplayName(_ planType: String?) -> String? {
+        SubscriptionPlan.paidDisplayName(planType)
+    }
+
+    private static func hasUnavailablePaidSubscriptionExpiration(_ status: QuotaStatus) -> Bool {
+        guard paidPlanDisplayName(status.planType) != nil else { return false }
+        guard let activeUntil = status.subscriptionActiveUntil else { return false }
+        // OAuth refresh can preserve an older ID Token after a subscription renewal.
+        return activeUntil <= status.fetchedAt
     }
 
     private static func monthDay(_ date: Date, timeZone: TimeZone) -> String {

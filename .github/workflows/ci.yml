@@ -1,0 +1,44 @@
+name: CI
+
+'on':
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: macos-15
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Validate shell scripts
+        run: zsh -n scripts/run-tests.sh scripts/build-app.sh scripts/install.sh
+
+      - name: Validate app property list
+        run: plutil -lint Resources/Info.plist
+
+      - name: Run tests
+        run: ./scripts/run-tests.sh
+
+      - name: Build release app
+        run: ./scripts/build-app.sh

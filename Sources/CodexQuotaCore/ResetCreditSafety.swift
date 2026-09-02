@@ -55,7 +55,24 @@ enum ResetCreditAccountGuard {
     }
 }
 
+enum AccountIdentityGuard {
+    static func validateUnchanged(
+        initial: String?,
+        current: String?
+    ) throws {
+        guard initial == current else {
+            throw QuotaServiceError.accountChanged
+        }
+    }
+}
+
 enum ResetCreditRedirectPolicy {
+    static func redirectedRequest(_ request: URLRequest) -> URLRequest? {
+        nil
+    }
+}
+
+enum SubscriptionRedirectPolicy {
     static func redirectedRequest(_ request: URLRequest) -> URLRequest? {
         nil
     }

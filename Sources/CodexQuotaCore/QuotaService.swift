@@ -7,6 +7,9 @@ public final class QuotaService {
     public init() {}
 
     public func fetch(forceTokenRefresh: Bool) async throws -> QuotaStatus {
+        let initialAccountFingerprint = AccountIdentityParser.fingerprint(
+            authAccountID: AuthFileParser.loadCurrent().accountID
+        )
         let executableURL = try CodexExecutableLocator.locate()
         let messages = AppServerRequestFactory.fetchRequests(
             forceTokenRefresh: forceTokenRefresh
@@ -24,9 +27,25 @@ public final class QuotaService {
         let accountFingerprint = AccountIdentityParser.fingerprint(
             authAccountID: auth.accountID
         )
+        try AccountIdentityGuard.validateUnchanged(
+            initial: initialAccountFingerprint,
+            current: accountFingerprint
+        )
         var warnings: [String] = []
         var availableCount = parsed.resetCreditsAvailableCount
         var nearestExpiration = parsed.nearestResetCreditExpiresAt
+        var liveSubscription: ParsedSubscriptionSummary?
+
+        if let accessToken = auth.accessToken, let accountID = auth.accountID {
+            do {
+                liveSubscription = try await SubscriptionHTTPClient().fetch(
+                    accessToken: accessToken,
+                    accountID: accountID
+                )
+            } catch {
+                liveSubscription = nil
+            }
+        }
 
         let shouldUseHTTPSFallback = nearestExpiration == nil
             && !parsed.hasResetCreditDetails
@@ -64,8 +83,22 @@ public final class QuotaService {
             }
         }
 
-        let planType = parsed.planType ?? auth.planType
-        if auth.subscriptionActiveUntil == nil, planType?.lowercased() == "pro" {
+        let currentFingerprint = AccountIdentityParser.fingerprint(
+            authAccountID: AuthFileParser.loadCurrent().accountID
+        )
+        try AccountIdentityGuard.validateUnchanged(
+            initial: accountFingerprint,
+            current: currentFingerprint
+        )
+
+        let subscription = SubscriptionStatusResolver.resolve(
+            appServerPlanType: parsed.planType,
+            tokenPlanType: auth.planType,
+            tokenActiveUntil: auth.subscriptionActiveUntil,
+            live: liveSubscription
+        )
+        if subscription.activeUntil == nil,
+           subscription.planType?.lowercased() == "pro" {
             warnings.append("未读取到会员到期时间")
         }
 
@@ -73,8 +106,8 @@ public final class QuotaService {
             remainingPercent: parsed.remainingPercent,
             resetsAt: parsed.resetsAt,
             windowDurationMins: parsed.windowDurationMins,
-            planType: planType,
-            subscriptionActiveUntil: auth.subscriptionActiveUntil,
+            planType: subscription.planType,
+            subscriptionActiveUntil: subscription.activeUntil,
             resetCreditsAvailableCount: availableCount,
             nearestResetCreditExpiresAt: nearestExpiration,
             fetchedAt: Date(),
@@ -350,6 +383,10 @@ struct JSONLineReader {
     let handle: FileHandle
     private var buffer = Data()
 
+    init(handle: FileHandle) {
+        self.handle = handle
+    }
+
     mutating func readEnvelopes(untilResponseFor requestID: Int) throws -> [JSONDictionary] {
         var received: [JSONDictionary] = []
         while let envelope = try readEnvelope() {
@@ -421,6 +458,19 @@ struct EphemeralAuthContext {
     )
 }
 
+private struct AuthTokenClaims {
+    let accountID: String?
+    let subscriptionActiveUntil: Date?
+    let planType: String?
+
+    init?(token: String?) {
+        guard let token, !token.isEmpty else { return nil }
+        accountID = JWTClaimParser.accountID(from: token)
+        subscriptionActiveUntil = JWTClaimParser.subscriptionActiveUntil(from: token)
+        planType = JWTClaimParser.planType(from: token)
+    }
+}
+
 enum AuthFileParser {
     static func loadCurrent(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -447,24 +497,121 @@ enum AuthFileParser {
             return nil
         }
 
-        let accessToken = JSONValue.string(
+        let accessTokenCandidate = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["access_token", "accessToken"])
         )
         let idToken = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["id_token", "idToken"])
         )
-        let accountID = JSONValue.string(
+        let idClaims = AuthTokenClaims(token: idToken)
+        let accessClaims = AuthTokenClaims(token: accessTokenCandidate)
+        let explicitAccountID = JSONValue.string(
             JSONValue.value(in: tokens, keys: ["account_id", "accountId"])
-        ) ?? accessToken.flatMap(JWTClaimParser.accountID)
-            ?? idToken.flatMap(JWTClaimParser.accountID)
+        )
+        let accountID = explicitAccountID ?? accessClaims?.accountID
+            ?? idClaims?.accountID
+        let tokenClaims = [idClaims, accessClaims]
+            .compactMap { $0 }
+            .filter { claims in
+                if let tokenAccountID = claims.accountID {
+                    return tokenAccountID == accountID
+                }
+                return explicitAccountID != nil
+            }
+        let subscriptionCandidate = tokenClaims
+            .compactMap { claims -> (claims: AuthTokenClaims, activeUntil: Date)? in
+                guard let activeUntil = claims.subscriptionActiveUntil else { return nil }
+                return (claims, activeUntil)
+            }
+            .max { $0.activeUntil < $1.activeUntil }
+        let accessTokenIsAccountScoped: Bool
+        if let tokenAccountID = accessClaims?.accountID {
+            accessTokenIsAccountScoped = tokenAccountID == accountID
+        } else {
+            accessTokenIsAccountScoped = explicitAccountID != nil
+        }
+        let accessToken = accessTokenIsAccountScoped ? accessTokenCandidate : nil
 
         return EphemeralAuthContext(
             accessToken: accessToken,
             accountID: accountID,
-            subscriptionActiveUntil: idToken.flatMap(JWTClaimParser.subscriptionActiveUntil),
-            planType: idToken.flatMap(JWTClaimParser.planType)
-                ?? accessToken.flatMap(JWTClaimParser.planType)
+            subscriptionActiveUntil: subscriptionCandidate?.activeUntil,
+            planType: subscriptionCandidate?.claims.planType
+                ?? tokenClaims.compactMap(\.planType).first
         )
+    }
+}
+
+enum SubscriptionHTTPRequestFactory {
+    static func makeRequest(
+        accessToken: String,
+        accountID: String
+    ) throws -> URLRequest {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "chatgpt.com"
+        components.path = "/backend-api/subscriptions"
+        components.queryItems = [URLQueryItem(name: "account_id", value: accountID)]
+        guard let endpoint = components.url else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
+        return request
+    }
+}
+
+private struct SubscriptionHTTPClient {
+    func fetch(
+        accessToken: String,
+        accountID: String
+    ) async throws -> ParsedSubscriptionSummary {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 15
+
+        let delegate = SubscriptionURLSessionDelegate()
+        let session = URLSession(
+            configuration: configuration,
+            delegate: delegate,
+            delegateQueue: nil
+        )
+        defer { session.invalidateAndCancel() }
+
+        let request = try SubscriptionHTTPRequestFactory.makeRequest(
+            accessToken: accessToken,
+            accountID: accountID
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.url?.scheme?.lowercased() == "https",
+              httpResponse.url?.host?.lowercased() == "chatgpt.com",
+              httpResponse.url?.path == "/backend-api/subscriptions",
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw QuotaServiceError.malformedAppServerResponse
+        }
+        return try SubscriptionParser.parseHTTPResponse(data)
+    }
+}
+
+private final class SubscriptionURLSessionDelegate: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(SubscriptionRedirectPolicy.redirectedRequest(request))
     }
 }
 

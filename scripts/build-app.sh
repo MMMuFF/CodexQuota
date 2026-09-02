@@ -11,6 +11,7 @@ app_dir="${staging_root}/CodexQuota.app"
 verification_dir="${staging_root}/verification"
 contents_dir="${app_dir}/Contents"
 macos_dir="${contents_dir}/MacOS"
+resources_dir="${contents_dir}/Resources"
 swiftpm_state_dir="${project_dir}/.build/swiftpm-state"
 module_cache_dir="${swiftpm_state_dir}/module-cache"
 signing_identity="${CODE_SIGN_IDENTITY:--}"
@@ -36,9 +37,11 @@ swift build \
   -c release \
   --product CodexQuota
 
-mkdir -p "${macos_dir}"
+mkdir -p "${macos_dir}" "${resources_dir}"
 cp -f "${project_dir}/.build/release/CodexQuota" "${macos_dir}/CodexQuota"
 cp -f "${project_dir}/Resources/Info.plist" "${contents_dir}/Info.plist"
+cp -f "${project_dir}/Resources/AppIcon.icns" "${resources_dir}/AppIcon.icns"
+cp -f "${project_dir}/Resources/Assets.car" "${resources_dir}/Assets.car"
 
 /usr/bin/xattr -cr "${app_dir}"
 /usr/bin/codesign --force --deep --sign "${signing_identity}" "${app_dir}"

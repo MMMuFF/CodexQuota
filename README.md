@@ -11,20 +11,20 @@
 <p align="center">
   <img
     src="./docs/images/codex-quota-sidebar.png"
-    alt="Codex 左侧栏昵称旁显示额度剩余百分比、刷新日期和剩余天数"
+    alt="Codex 左侧栏昵称旁显示剩余额度、刷新日期、剩余天数和橙色进度偏差线"
     width="620">
 </p>
-<p align="center"><sub>昵称旁常显：剩余额度 · 刷新日期 · 剩余天数（演示数据）</sub></p>
+<p align="center"><sub>昵称旁常显：剩余额度 · 刷新日期 · 剩余天数；细线提示时间与消耗偏差（演示数据）</sub></p>
 
 鼠标悬停后可查看时间/额度进度、预计耗尽时间、会员到期时间、额度刷新时间和最早到期重置券，并可手动刷新或在二次确认后使用一张重置券。
 
 <p align="center">
   <img
     src="./docs/images/codex-quota-popover.png"
-    alt="Codex 额度详情卡显示会员到期、额度刷新时间和最早到期重置券"
+    alt="Codex 额度详情卡显示时间与额度进度、预计耗尽时间、会员到期和最早到期重置券"
     width="620">
 </p>
-<p align="center"><sub>详情卡位置与基础信息示意；当前版本另含时间/额度进度与预计耗尽时间（演示数据）</sub></p>
+<p align="center"><sub>悬停详情：比较时间已过与额度已用，并显示周期均速预测、会员与重置券（演示数据）</sub></p>
 
 > [!IMPORTANT]
 > Release ZIP，以及未指定 `CODE_SIGN_IDENTITY` 的本地构建，默认使用 ad-hoc 签名，没有 Developer ID 公证。请仅从本仓库 Release 下载，或检查源码后自行构建；更换或重新构建应用后，macOS 可能要求重新授权辅助功能。

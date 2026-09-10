@@ -53,6 +53,13 @@ private struct CodexQuotaCoreTestRunner {
             ("消费结果纯解析", consumeOutcomes),
             ("消费请求只含幂等 ID", consumeRequestShape),
             ("重置券请求按账户与时间隔离", resetCreditAccountScope),
+            ("临期自动重置只在最后半小时触发", automaticResetCreditWindow),
+            ("自动重置拒绝关闭选项和不可信快照", automaticResetCreditRequiresFreshOptIn),
+            ("自动重置偏好按账户保存且默认关闭", automaticResetCreditPreferences),
+            ("自动重置失败重试与重启沿用同一请求", automaticResetCreditRetries),
+            ("自动重置成功后不连兑且无需重置可再检查", automaticResetCreditOutcomes),
+            ("自动重置复用未决手动请求且不转移兑换目标", automaticResetCreditPendingSafety),
+            ("自动重置在发送前再次检查到期时间", automaticResetCreditSendDeadline),
             ("额度读取期间账户变化会被拒绝", accountIdentityTransitionRejected),
             ("重置券接口拒绝重定向", resetCreditRedirectPolicy),
             ("Codex 路径不信任任意 PATH", codexExecutableCandidates),
@@ -70,6 +77,10 @@ private struct CodexQuotaCoreTestRunner {
             ("窗口坐标转换为 AppKit 坐标", overlayCoordinateConversion),
             ("额度组件落在昵称右侧", overlayBadgePlacement),
             ("额度组件跟随账户底栏中心线", overlayBadgeFollowsFooterCenter),
+            ("额度组件避让底栏新增语音按钮", overlayBadgeAvoidsAdditionalFooterButtons),
+            ("额度组件避让带文字的宽语音按钮", overlayBadgeAvoidsLabeledFooterButton),
+            ("麦克风漏识别时仍保留按钮位", overlayReservesMissingVoiceButton),
+            ("窄侧栏新增按钮不导致底栏识别失效", overlayFooterWithNarrowAccount),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
             ("仅任务页账户底栏显示组件", overlayTaskSidebarFooter),
@@ -708,6 +719,195 @@ private struct CodexQuotaCoreTestRunner {
         )
     }
 
+    private static func automaticResetStatus(
+        expiresIn: TimeInterval? = 1_800,
+        count: Int? = 1,
+        account: String? = "demo-account-a",
+        age: TimeInterval = 0
+    ) -> QuotaStatus {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        return QuotaStatus(
+            remainingPercent: 40,
+            resetsAt: now.addingTimeInterval(86_400),
+            windowDurationMins: 10_080,
+            planType: "pro",
+            subscriptionActiveUntil: nil,
+            resetCreditsAvailableCount: count,
+            nearestResetCreditExpiresAt: expiresIn.map { now.addingTimeInterval($0) },
+            fetchedAt: now.addingTimeInterval(-age),
+            warnings: [],
+            accountFingerprint: account
+        )
+    }
+
+    private static func automaticResetCreditWindow() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        for offset: TimeInterval in [1, 1_799, 1_800] {
+            try expect(
+                AutomaticResetCreditPolicy.expiringCredit(
+                    in: automaticResetStatus(expiresIn: offset), enabled: true, now: now
+                ) == now.addingTimeInterval(offset),
+                "最后半小时内没有触发：\(offset)"
+            )
+        }
+        for offset: TimeInterval in [-1, 0, 1_801] {
+            try expect(
+                AutomaticResetCreditPolicy.expiringCredit(
+                    in: automaticResetStatus(expiresIn: offset), enabled: true, now: now
+                ) == nil,
+                "已过期或尚未临期的券触发了自动兑换"
+            )
+        }
+    }
+
+    private static func automaticResetCreditRequiresFreshOptIn() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        try expect(
+            AutomaticResetCreditPolicy.expiringCredit(
+                in: automaticResetStatus(), enabled: false, now: now
+            ) == nil,
+            "未勾选时仍触发自动兑换"
+        )
+        let invalid = [
+            automaticResetStatus(expiresIn: nil),
+            automaticResetStatus(count: nil),
+            automaticResetStatus(count: 0),
+            automaticResetStatus(count: -1),
+            automaticResetStatus(account: nil),
+            automaticResetStatus(account: ""),
+            automaticResetStatus(age: 61),
+            automaticResetStatus(age: -1),
+        ]
+        for status in invalid {
+            try expect(
+                AutomaticResetCreditPolicy.expiringCredit(
+                    in: status, enabled: true, now: now
+                ) == nil,
+                "缺少详情、账户或过时的缓存触发了自动兑换"
+            )
+        }
+    }
+
+    private static func automaticResetCreditPreferences() throws {
+        let suite = "CodexQuotaTests.\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite), "测试偏好不可用")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let automation = AutomaticResetCreditAutomation(defaults: defaults)
+        try expect(!automation.isEnabled(for: "demo-account-a"), "新账户默认开启")
+        automation.setEnabled(true, for: "demo-account-a")
+        let restored = AutomaticResetCreditAutomation(defaults: defaults)
+        try expect(restored.isEnabled(for: "demo-account-a"), "重启丢失勾选状态")
+        try expect(!restored.isEnabled(for: "demo-account-b"), "勾选状态跨账户传播")
+        try expect(!restored.isEnabled(for: nil), "未知账户启用自动兑换")
+        restored.setEnabled(false, for: "demo-account-a")
+        try expect(
+            !AutomaticResetCreditAutomation(defaults: defaults).isEnabled(for: "demo-account-a"),
+            "关闭后重新加载仍启用"
+        )
+    }
+
+    private static func automaticResetCreditRetries() throws {
+        let suite = "CodexQuotaTests.\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite), "测试偏好不可用")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let automation = AutomaticResetCreditAutomation(defaults: defaults)
+        automation.setEnabled(true, for: "demo-account-a")
+        let first = try require(automation.beginAttempt(
+            for: automaticResetStatus(), now: now, pendingRequest: nil
+        ), "临期未创建自动请求")
+        try expect(automation.beginAttempt(
+            for: automaticResetStatus(age: -59), now: now.addingTimeInterval(59),
+            pendingRequest: first
+        ) == nil, "一分钟内重复请求")
+        let restarted = AutomaticResetCreditAutomation(defaults: defaults)
+        let retry = try require(restarted.beginAttempt(
+            for: automaticResetStatus(age: -60), now: now.addingTimeInterval(60),
+            pendingRequest: nil
+        ), "重启后的重试没有恢复")
+        try expect(first.idempotencyKey == retry.idempotencyKey, "模糊失败后使用新请求")
+        try expect(restarted.beginAttempt(
+            for: automaticResetStatus(account: "demo-account-b"), now: now,
+            pendingRequest: first
+        ) == nil, "请求跨账户自动执行")
+        restarted.setEnabled(false, for: "demo-account-a")
+        try expect(restarted.beginAttempt(
+            for: automaticResetStatus(age: -120), now: now.addingTimeInterval(120),
+            pendingRequest: first
+        ) == nil, "取消勾选后继续自动重试")
+    }
+
+    private static func automaticResetCreditOutcomes() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        for outcome in [ResetCreditConsumeResult.reset, .alreadyRedeemed, .noCredit, .nothingToReset] {
+            let suite = "CodexQuotaTests.\(UUID().uuidString)"
+            let defaults = try require(UserDefaults(suiteName: suite), "测试偏好不可用")
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let automation = AutomaticResetCreditAutomation(defaults: defaults)
+            automation.setEnabled(true, for: "demo-account-a")
+            let first = try require(automation.beginAttempt(
+                for: automaticResetStatus(), now: now, pendingRequest: nil
+            ), "首次请求缺失")
+            automation.recordOutcome(outcome, for: first, expiration: now.addingTimeInterval(1_800))
+            let restored = AutomaticResetCreditAutomation(defaults: defaults)
+            let next = restored.beginAttempt(
+                for: automaticResetStatus(age: -60), now: now.addingTimeInterval(60), pendingRequest: nil
+            )
+            if outcome == .nothingToReset {
+                try expect(next != nil, "无需重置后没有在临期内继续检查")
+                try expect(next?.idempotencyKey != first.idempotencyKey, "重复使用缓存的无需重置结果")
+            } else {
+                try expect(next == nil, "确定结果后对同一到期时间连兑")
+                try expect(restored.beginAttempt(
+                    for: automaticResetStatus(expiresIn: 1_860, age: -60),
+                    now: now.addingTimeInterval(60), pendingRequest: nil
+                ) != nil, "后续不同到期时间的券被永久禁止")
+            }
+        }
+    }
+
+    private static func automaticResetCreditPendingSafety() throws {
+        let suite = "CodexQuotaTests.\(UUID().uuidString)"
+        let defaults = try require(UserDefaults(suiteName: suite), "测试偏好不可用")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let automation = AutomaticResetCreditAutomation(defaults: defaults)
+        automation.setEnabled(true, for: "demo-account-a")
+        let manual = PendingResetCreditRequest(
+            accountFingerprint: "demo-account-a", idempotencyKey: UUID(), createdAt: now
+        )
+        let first = try require(automation.beginAttempt(
+            for: automaticResetStatus(), now: now, pendingRequest: manual
+        ), "自动请求缺失")
+        try expect(first == manual, "模糊的手动兑换未被复用")
+        try expect(automation.beginAttempt(
+            for: automaticResetStatus(expiresIn: 1_860, age: -60),
+            now: now.addingTimeInterval(60), pendingRequest: manual
+        ) == nil, "未决请求转移到了另一到期时间")
+
+        for pending in [
+            PendingResetCreditRequest(accountFingerprint: "demo-account-b", idempotencyKey: UUID(), createdAt: now),
+            PendingResetCreditRequest(accountFingerprint: "demo-account-a", idempotencyKey: UUID(), createdAt: now.addingTimeInterval(-86_401)),
+        ] {
+            let otherSuite = "CodexQuotaTests.\(UUID().uuidString)"
+            let otherDefaults = try require(UserDefaults(suiteName: otherSuite), "测试偏好不可用")
+            defer { otherDefaults.removePersistentDomain(forName: otherSuite) }
+            let other = AutomaticResetCreditAutomation(defaults: otherDefaults)
+            other.setEnabled(true, for: "demo-account-a")
+            try expect(other.beginAttempt(
+                for: automaticResetStatus(), now: now, pendingRequest: pending
+            ) == nil, "未知安全状态的请求被重新分配")
+        }
+    }
+
+    private static func automaticResetCreditSendDeadline() throws {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        try expect(!AutomaticResetCreditPolicy.canSend(deadline: now, now: now), "到期瞬间仍可发送")
+        try expect(!AutomaticResetCreditPolicy.canSend(deadline: now.addingTimeInterval(-1), now: now), "过期后仍可发送")
+        try expect(AutomaticResetCreditPolicy.canSend(deadline: now.addingTimeInterval(1), now: now), "未到期不能发送")
+        try expect(AutomaticResetCreditPolicy.canSend(deadline: nil, now: now), "无自动到期限制时影响手动兑换")
+    }
+
     private static func accountIdentityTransitionRejected() throws {
         let accountA = try require(
             AccountIdentityParser.fingerprint(authAccountID: "account-a"),
@@ -1344,8 +1544,8 @@ private struct CodexQuotaCoreTestRunner {
             "账户底栏中心距底部计算错误"
         )
         try expect(
-            footerMetrics.trailingControlMinX == 493,
-            "未取得右侧问号的真实左边界"
+            footerMetrics.trailingControlMinX == 457,
+            "问号左侧未保守预留一个麦克风按钮位"
         )
 
         let window = CGRect(x: 258, y: 333, width: 1_679, height: 970)
@@ -1364,13 +1564,99 @@ private struct CodexQuotaCoreTestRunner {
             "额度组件仍在使用固定的底部偏移"
         )
         try expect(
-            abs(frame.maxX - 489) < 0.001,
-            "额度组件没有给右侧问号留出空间"
+            abs(frame.maxX - 453) < 0.001,
+            "额度组件没有给麦克风预留位置"
         )
         try expect(
             CGRect(x: 493, y: 1_140, width: 32, height: 32).minX - frame.maxX >= 4,
             "额度组件与右侧问号发生重叠"
         )
+    }
+
+    private static func overlayBadgeAvoidsAdditionalFooterButtons() throws {
+        let sidebar = CGRect(x: 0, y: 0, width: 336, height: 800)
+        let account = CGRect(x: 8, y: 754, width: 228, height: 32)
+        let help = CGRect(x: 296, y: 754, width: 32, height: 32)
+        let voice = CGRect(x: 252, y: 754, width: 32, height: 32)
+        let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+            sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+            additionalButtonFrames: [voice, CGRect(x: 150, y: 690, width: 32, height: 32)]
+        ), "包含语音按钮的底栏被隐藏")
+        try expect(metrics.trailingControlMinX == voice.minX, "未给语音按钮预留位置")
+        let badge = CodexOverlayGeometry.badgeFrame(
+            for: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            sidebarTrailingX: sidebar.maxX, footerCenterBottomInset: metrics.centerBottomInset,
+            trailingControlMinX: metrics.trailingControlMinX
+        )
+        try expect(badge.maxX <= voice.minX - 4, "额度覆盖语音按钮")
+        try expect(badge.minX >= 118, "避让语音按钮后挤占昵称位置")
+    }
+
+    private static func overlayBadgeAvoidsLabeledFooterButton() throws {
+        let sidebar = CGRect(x: 0, y: 0, width: 464, height: 800)
+        let account = CGRect(x: 8, y: 754, width: 292, height: 32)
+        let voice = CGRect(x: 308, y: 754, width: 112, height: 32)
+        let help = CGRect(x: 424, y: 754, width: 32, height: 32)
+        let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+            sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+            additionalButtonFrames: [voice, help]
+        ), "带文字按钮的账户底栏未被识别")
+        try expect(metrics.trailingControlMinX == voice.minX, "宽语音按钮被当作非底栏控件忽略")
+        let badge = CodexOverlayGeometry.badgeFrame(
+            for: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            trailingControlMinX: metrics.trailingControlMinX
+        )
+        try expect(badge.maxX <= voice.minX - 4, "额度覆盖带文字的语音按钮")
+    }
+
+    private static func overlayReservesMissingVoiceButton() throws {
+        // A wide account AX frame must not make the unreported microphone slot usable.
+        let sidebar = CGRect(x: 14, y: 0, width: 306, height: 800)
+        let account = CGRect(x: 22, y: 754, width: 250, height: 32)
+        let help = CGRect(x: 280, y: 754, width: 32, height: 32)
+        let microphone = CGRect(x: 244, y: 754, width: 32, height: 32)
+        for reportedButtons in [[], [microphone]] {
+            let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                sidebarFrame: sidebar, accountControlFrame: account,
+                trailingButtonFrame: help, additionalButtonFrames: reportedButtons
+            ), "漏识别语音按钮时账户底栏消失")
+            let badge = CodexOverlayGeometry.badgeFrame(
+                for: CGRect(x: 14, y: 0, width: 1_200, height: 800),
+                footerCenterBottomInset: metrics.centerBottomInset,
+                trailingControlMinX: metrics.trailingControlMinX
+            )
+            try expect(badge.maxX <= microphone.minX - 4, "额度面板仍占用了麦克风按钮位")
+            try expect(badge.minX == 132, "保护麦克风后挤占昵称")
+            try expect(badge.width >= CodexOverlayGeometry.minimumBadgeWidth, "仍有空间却隐藏额度")
+        }
+    }
+
+    private static func overlayFooterWithNarrowAccount() throws {
+        for width: CGFloat in [306, 282] {
+            let sidebar = CGRect(x: 40, y: 0, width: width, height: 800)
+            let account = CGRect(x: 48, y: 754, width: width - 152, height: 32)
+            let voice = CGRect(x: sidebar.maxX - 136, y: 754, width: 92, height: 32)
+            let help = CGRect(x: sidebar.maxX - 40, y: 754, width: 32, height: 32)
+            let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+                additionalButtonFrames: [voice, help]
+            ), "新增按钮压缩昵称区域后底栏被误判为设置页")
+            try expect(metrics.trailingControlMinX == voice.minX, "窄侧栏未给语音按钮预留空间")
+            let badge = CodexOverlayGeometry.badgeFrame(
+                for: CGRect(x: 40, y: 0, width: 1_200, height: 800),
+                trailingControlMinX: metrics.trailingControlMinX
+            )
+            try expect(badge.maxX <= voice.minX - 4, "窄侧栏的额度覆盖语音入口")
+            try expect(badge.minX == 158, "窄侧栏的额度挤占昵称位置")
+            try expect(
+                (badge.width >= CodexOverlayGeometry.minimumBadgeWidth) == (width == 306),
+                "空间不足时未交由现有最小宽度门禁隐藏"
+            )
+            try expect(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+                additionalButtonFrames: [CGRect(x: voice.minX, y: 690, width: 92, height: 32)]
+            ) == nil, "非底栏按钮放宽了账户控件识别条件")
+        }
     }
 
     private static func overlayBadgeFollowsSidebar() throws {

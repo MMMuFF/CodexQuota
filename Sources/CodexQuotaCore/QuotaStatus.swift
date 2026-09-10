@@ -61,6 +61,7 @@ public enum QuotaServiceError: Error, LocalizedError, Equatable, Sendable {
     case appServerRequestFailed(String)
     case unsupportedResetCreditOutcome
     case accountChanged
+    case resetCreditExpired
 
     public var errorDescription: String? {
         switch self {
@@ -80,6 +81,8 @@ public enum QuotaServiceError: Error, LocalizedError, Equatable, Sendable {
             return "Codex 返回了未知的重置券结果"
         case .accountChanged:
             return "Codex 账户已切换，未使用重置券"
+        case .resetCreditExpired:
+            return "临期重置券已过期，已取消自动使用"
         }
     }
 }

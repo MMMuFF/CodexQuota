@@ -214,7 +214,8 @@ public enum CodexOverlayGeometry {
     public static func taskSidebarFooterMetrics(
         sidebarFrame: CGRect,
         accountControlFrame: CGRect?,
-        trailingButtonFrame: CGRect?
+        trailingButtonFrame: CGRect?,
+        additionalButtonFrames: [CGRect] = []
     ) -> CodexTaskSidebarFooterMetrics? {
         guard let accountControlFrame, let trailingButtonFrame else { return nil }
 
@@ -230,7 +231,6 @@ public enum CodexOverlayGeometry {
         )
         guard accountControlFrame.minX >= sidebarFrame.minX - 4
             && accountControlFrame.maxX <= sidebarFrame.maxX + 4
-            && accountControlFrame.width >= sidebarFrame.width * 0.55
             && accountControlFrame.height >= 24
             && accountControlFrame.height <= 56
             && accountBottomGap >= -4
@@ -247,9 +247,27 @@ public enum CodexOverlayGeometry {
         }
 
         let footerCenterY = (accountControlFrame.midY + trailingButtonFrame.midY) / 2
+        let footerButtons = additionalButtonFrames.filter {
+            $0.width >= 20
+                && $0.height >= 20 && $0.height <= maximumTrailingHeight
+                && $0.minX >= accountControlFrame.maxX + trailingControlGap
+                && $0.maxX <= trailingButtonFrame.minX - trailingControlGap
+                && abs($0.midY - footerCenterY) <= 6
+        }
+        let firstTrailingControlX = footerButtons.map(\.minX).min() ?? trailingButtonFrame.minX
+        // Labeled footer actions shrink the flexible account menu by their own span.
+        let additionalControlsWidth = trailingButtonFrame.minX - firstTrailingControlX
+        guard accountControlFrame.width + additionalControlsWidth >= sidebarFrame.width * 0.55 else {
+            return nil
+        }
+        // AX can omit the microphone or include it in the account control's frame.
+        // Missing an action must not give its hit area to the overlay.
+        let protectedTrailingControlX = footerButtons.isEmpty
+            ? trailingButtonFrame.minX - max(32, trailingButtonFrame.width) - trailingControlGap
+            : firstTrailingControlX
         return CodexTaskSidebarFooterMetrics(
             centerBottomInset: sidebarFrame.maxY - footerCenterY,
-            trailingControlMinX: trailingButtonFrame.minX
+            trailingControlMinX: protectedTrailingControlX
         )
     }
 
@@ -278,16 +296,8 @@ public enum CodexOverlayGeometry {
         let width: CGFloat
         if let constrainedRight {
             let maximumRight = min(windowMaximumRight, constrainedRight)
-            let minimumX = windowFrame.minX + 16
-            let effectiveMaximumRight = max(
-                maximumRight,
-                minimumX + minimumBadgeWidth
-            )
-            x = max(
-                minimumX,
-                min(preferredX, effectiveMaximumRight - badgeSize.width)
-            )
-            width = max(minimumBadgeWidth, effectiveMaximumRight - x)
+            x = preferredX
+            width = max(0, maximumRight - x)
         } else {
             x = min(
                 preferredX,

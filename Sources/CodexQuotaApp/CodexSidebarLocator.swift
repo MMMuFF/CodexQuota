@@ -299,11 +299,54 @@ final class CodexSidebarLocator {
         guard let metrics = CodexOverlayGeometry.taskSidebarFooterMetrics(
             sidebarFrame: sidebarFrame,
             accountControlFrame: accountFrame,
-            trailingButtonFrame: trailingFrame
+            trailingButtonFrame: trailingFrame,
+            additionalButtonFrames: footerButtonFrames(
+                near: accountControl, accountFrame: accountFrame,
+                trailingFrame: trailingFrame, sidebarFrame: sidebarFrame
+            )
         ) else {
             return .nonTask
         }
         return .task(metrics: metrics)
+    }
+
+    private func footerButtonFrames(
+        near accountControl: AXUIElement,
+        accountFrame: CGRect,
+        trailingFrame: CGRect,
+        sidebarFrame: CGRect
+    ) -> [CGRect] {
+        var root = accountControl
+        // Find the shared footer container, then inspect only the account row.
+        for _ in 0..<6 {
+            guard let rawParent = attribute(root, kAXParentAttribute as CFString) else { break }
+            root = unsafeBitCast(rawParent, to: AXUIElement.self)
+            if let rootFrame = frame(of: root), rootFrame.contains(trailingFrame) { break }
+        }
+        let band = CGRect(
+            x: sidebarFrame.minX, y: accountFrame.minY - 8,
+            width: sidebarFrame.width, height: accountFrame.height + 16
+        )
+        var queue: [(AXUIElement, Int)] = [(root, 0)]
+        var cursor = 0
+        var frames: [CGRect] = []
+        while cursor < queue.count, cursor < 128 {
+            let (element, depth) = queue[cursor]
+            cursor += 1
+            let elementFrame = frame(of: element)
+            if let elementFrame, !elementFrame.intersects(band) { continue }
+            let role = stringAttribute(element, kAXRoleAttribute as CFString)
+            if !CFEqual(element, accountControl),
+               role == kAXButtonRole as String || role == kAXPopUpButtonRole as String,
+               let elementFrame {
+                frames.append(elementFrame)
+            }
+            if depth < 6,
+               let children = attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement] {
+                queue.append(contentsOf: children.map { ($0, depth + 1) })
+            }
+        }
+        return frames
     }
 
     private func hasTransientOverlayAncestor(_ element: AXUIElement) -> Bool {

@@ -8,7 +8,9 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private static let legacyPendingResetKeyDefaultsKey =
         "com.mufeng.codexquota.pending-reset-idempotency-key"
 
-    private let service = QuotaService()
+    private let service: QuotaServicing
+    private let defaults: UserDefaults
+    private let automaticReset: AutomaticResetCreditAutomation
     private let overlayPanel = QuotaOverlayPanel()
     private let popover = NSPopover()
     private let popoverController = QuotaPopoverViewController()
@@ -16,11 +18,11 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
     private var placementTimer: Timer?
     private var refreshTimer: Timer?
+    private var automaticResetTimer: Timer?
     private var refreshTask: Task<Void, Never>?
     private var currentStatus: QuotaStatus?
     private var isConsuming = false
     private var isConfirmingReset = false
-    private var interactionKeepsVisible = false
     private var pendingResetRequests: [String: PendingResetCreditRequest] = [:]
     private var isPointerOverChip = false
     private var isPointerOverPopover = false
@@ -34,10 +36,17 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var standardChipTooltip = "正在读取 Codex 额度"
     private var standardChipDeviation: QuotaUsageDeviation?
 
-    override init() {
+    init(
+        service: QuotaServicing = QuotaService(),
+        defaults: UserDefaults = .standard,
+        startMonitoring: Bool = true
+    ) {
+        self.service = service
+        self.defaults = defaults
+        self.automaticReset = AutomaticResetCreditAutomation(defaults: defaults)
         super.init()
 
-        if let data = UserDefaults.standard.data(
+        if let data = defaults.data(
             forKey: Self.pendingResetRequestsDefaultsKey
         ), let stored = try? JSONDecoder().decode(
             [String: PendingResetCreditRequest].self,
@@ -45,22 +54,25 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         ) {
             pendingResetRequests = stored
         }
-        UserDefaults.standard.removeObject(
+        defaults.removeObject(
             forKey: Self.legacyPendingResetKeyDefaultsKey
         )
 
         configurePopover()
         configureActions()
-        observeWorkspace()
-        schedulePlacementUpdates()
-        scheduleRefresh()
-        updateOverlayPlacement()
-        refresh(forceTokenRefresh: true)
+        if startMonitoring {
+            observeWorkspace()
+            schedulePlacementUpdates()
+            scheduleRefresh()
+            updateOverlayPlacement()
+            refresh(forceTokenRefresh: true)
+        }
     }
 
     deinit {
         placementTimer?.invalidate()
         refreshTimer?.invalidate()
+        automaticResetTimer?.invalidate()
         refreshTask?.cancel()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -102,6 +114,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         popoverController.onUseResetCredit = { [weak self] in
             self?.confirmAndConsumeResetCredit()
         }
+        popoverController.onAutomaticResetChanged = { [weak self] enabled in
+            guard let self, !isConsuming, refreshTask == nil,
+                  let account = currentStatus?.accountFingerprint else { return }
+            automaticReset.setEnabled(enabled, for: account)
+            if enabled {
+                refresh(forceTokenRefresh: true)
+            } else {
+                popoverController.showActionMessage("已关闭此账户的临期自动使用")
+            }
+        }
         popoverController.onQuit = { [weak self] in
             self?.confirmAndQuit()
         }
@@ -125,6 +147,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             NSWorkspace.didHideApplicationNotification,
             NSWorkspace.didUnhideApplicationNotification,
             NSWorkspace.activeSpaceDidChangeNotification,
+            NSWorkspace.didWakeNotification,
         ] {
             center.addObserver(
                 self,
@@ -157,9 +180,22 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         )
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+
+        let automaticTimer = Timer(
+            timeInterval: AutomaticResetCreditPolicy.checkInterval,
+            target: self,
+            selector: #selector(automaticResetTimerFired),
+            userInfo: nil,
+            repeats: true
+        )
+        RunLoop.main.add(automaticTimer, forMode: .common)
+        automaticResetTimer = automaticTimer
     }
 
     @objc private func workspaceStateChanged(_ notification: Notification) {
+        if notification.name == NSWorkspace.didWakeNotification {
+            refresh(forceTokenRefresh: true)
+        }
         if notification.name == NSWorkspace.didLaunchApplicationNotification,
            let application = notification.userInfo?[
                NSWorkspace.applicationUserInfoKey
@@ -178,15 +214,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         refresh(forceTokenRefresh: false)
     }
 
-    private func updateOverlayPlacement() {
-        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let helperBundleIdentifier = Bundle.main.bundleIdentifier
-        let isCodexFrontmost = frontmostBundleIdentifier == CodexWindowLocator.bundleIdentifier
-        let isInteractingWithHelper = frontmostBundleIdentifier == helperBundleIdentifier
-            && (popover.isShown || interactionKeepsVisible || isConsuming)
+    @objc private func automaticResetTimerFired() {
+        guard automaticReset.isEnabled(for: currentStatus?.accountFingerprint),
+              let expiration = currentStatus?.nearestResetCreditExpiresAt else { return }
+        let remaining = expiration.timeIntervalSinceNow
+        guard remaining > 0, remaining <= AutomaticResetCreditPolicy.expiryWindow else { return }
+        refresh(forceTokenRefresh: false)
+    }
 
-        guard isCodexFrontmost || isInteractingWithHelper,
-              let targetWindow = CodexWindowLocator.locateMainWindow() else {
+    private func updateOverlayPlacement() {
+        guard let targetWindow = CodexWindowLocator.locateMainWindow() else {
             hideOverlay()
             return
         }
@@ -224,13 +261,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             footerCenterBottomInset: lastKnownFooterCenterBottomInset,
             trailingControlMinX: lastKnownTrailingControlMinX
         )
+        guard frame.width >= CodexOverlayGeometry.minimumBadgeWidth else {
+            hideOverlay()
+            return
+        }
         if overlayPanel.frame != frame {
             overlayPanel.setFrame(frame, display: true)
         }
 
-        if !overlayPanel.isVisible {
-            overlayPanel.orderFrontRegardless()
-        }
+        // Keep the chip with its target instead of floating above unrelated apps.
+        overlayPanel.order(.above, relativeTo: targetWindow.windowID)
     }
 
     private func hideOverlay() {
@@ -265,9 +305,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         if overlayPanel.frame != frame {
             overlayPanel.setFrame(frame, display: true)
         }
-        if !overlayPanel.isVisible {
-            overlayPanel.orderFrontRegardless()
-        }
+        overlayPanel.order(.above, relativeTo: targetWindow.windowID)
     }
 
     private func restoreStandardChipIfNeeded() {
@@ -292,7 +330,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    private func refresh(forceTokenRefresh: Bool) {
+    func refresh(forceTokenRefresh: Bool) {
         guard refreshTask == nil, !isConsuming, !isConfirmingReset else { return }
 
         popoverController.showLoading(previousStatus: currentStatus)
@@ -308,6 +346,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
                 currentStatus = status
                 updateDisplay(with: status)
+                refreshTask = nil
+                attemptAutomaticReset(for: status)
             } catch {
                 guard !Task.isCancelled else { return }
                 showRefreshError()
@@ -330,10 +370,27 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             )
         }
         popoverController.update(status: status, timeZone: .current)
+        popoverController.updateAutomaticReset(
+            enabled: automaticReset.isEnabled(for: status.accountFingerprint),
+            available: status.accountFingerprint != nil
+        )
+    }
+
+    private func attemptAutomaticReset(for status: QuotaStatus) {
+        guard !isConsuming, !isConfirmingReset, refreshTask == nil,
+              let account = status.accountFingerprint,
+              let request = automaticReset.beginAttempt(
+                for: status, now: Date(), pendingRequest: pendingResetRequests[account]
+              ) else { return }
+        consumeResetCredit(expectedAccountFingerprint: account, automaticRequest: request)
     }
 
     private func showRefreshError() {
         popoverController.showError(hasCachedStatus: currentStatus != nil)
+        popoverController.updateAutomaticReset(
+            enabled: automaticReset.isEnabled(for: currentStatus?.accountFingerprint),
+            available: false
+        )
         guard currentStatus == nil else { return }
         standardChipTitle = "-- · 读取失败"
         standardChipTooltip = "Codex 额度读取失败；点击后可重试"
@@ -396,7 +453,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         }
 
         isConfirmingReset = true
-        interactionKeepsVisible = true
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
@@ -408,7 +464,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         let response = alert.runModal()
         isConfirmingReset = false
-        interactionKeepsVisible = false
         targetApplication?.activate(options: [.activateIgnoringOtherApps])
         updateOverlayPlacement()
 
@@ -417,18 +472,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     }
 
     private func confirmAndQuit() {
-        interactionKeepsVisible = true
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "退出 Codex 昵称额度？"
-        alert.informativeText = "退出后额度将停止显示；下次登录时会自动启动。"
+        alert.informativeText = "退出后额度显示和临期自动使用重置券都会停止；下次登录时会自动启动。"
         alert.addButton(withTitle: "退出")
         alert.addButton(withTitle: "取消")
 
         let response = alert.runModal()
-        interactionKeepsVisible = false
 
         if response == .alertFirstButtonReturn {
             NSApplication.shared.terminate(nil)
@@ -438,17 +491,24 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         }
     }
 
-    private func consumeResetCredit(expectedAccountFingerprint: String) {
+    private func consumeResetCredit(
+        expectedAccountFingerprint: String,
+        automaticRequest: PendingResetCreditRequest? = nil
+    ) {
         guard !isConsuming, refreshTask == nil else { return }
 
         isConsuming = true
         popoverController.setConsuming(true)
 
-        let pendingRequest = pendingResetRequest(
+        let pendingRequest = automaticRequest ?? pendingResetRequest(
             for: expectedAccountFingerprint,
             now: Date()
         )
         let idempotencyKey = pendingRequest.idempotencyKey
+        let isAutomatic = automaticRequest != nil
+        let expiration = currentStatus?.nearestResetCreditExpiresAt
+        pendingResetRequests[expectedAccountFingerprint] = pendingRequest
+        persistPendingResetRequests()
 
         Task { [weak self] in
             guard let self else { return }
@@ -456,38 +516,47 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             do {
                 let result = try await service.consumeResetCredit(
                     expectedAccountFingerprint: expectedAccountFingerprint,
-                    idempotencyKey: idempotencyKey
+                    idempotencyKey: idempotencyKey,
+                    notAfter: isAutomatic ? expiration : nil
                 )
                 isConsuming = false
+                automaticReset.recordOutcome(result, for: pendingRequest, expiration: expiration)
                 removePendingResetRequest(for: expectedAccountFingerprint)
                 popoverController.setConsuming(false)
 
                 switch result {
                 case .reset, .alreadyRedeemed:
                     refresh(forceTokenRefresh: false)
-                    showPopover()
-                    popoverController.showActionMessage("额度已重置，正在更新…")
+                    if !isAutomatic { showPopover() }
+                    popoverController.showActionMessage(isAutomatic
+                        ? "已自动使用临期重置券，正在更新…" : "额度已重置，正在更新…")
                 case .nothingToReset:
-                    showPopover()
-                    popoverController.showActionMessage("当前额度无需重置，重置券未消耗")
+                    if !isAutomatic { showPopover() }
+                    popoverController.showActionMessage(isAutomatic
+                        ? "当前无需重置，临期内将继续检查" : "当前额度无需重置，重置券未消耗")
                 case .noCredit:
                     refresh(forceTokenRefresh: false)
-                    showPopover()
+                    if !isAutomatic { showPopover() }
                     popoverController.showActionMessage("当前没有可用重置券")
                 }
             } catch {
                 isConsuming = false
                 popoverController.setConsuming(false)
-                showPopover()
-                if (error as? QuotaServiceError) == .accountChanged {
+                if !isAutomatic { showPopover() }
+                if (error as? QuotaServiceError) == .resetCreditExpired {
                     removePendingResetRequest(for: expectedAccountFingerprint)
+                    automaticReset.recordOutcome(.noCredit, for: pendingRequest, expiration: expiration)
+                    popoverController.showActionMessage("临期券已过期，已取消自动使用")
+                } else if (error as? QuotaServiceError) == .accountChanged {
+                    removePendingResetRequest(for: expectedAccountFingerprint)
+                    automaticReset.recordOutcome(.nothingToReset, for: pendingRequest, expiration: expiration)
                     popoverController.showActionMessage(
                         "账户已切换，未使用重置券；正在刷新…"
                     )
                     refresh(forceTokenRefresh: true)
                 } else {
                     popoverController.showActionMessage(
-                        "使用失败；24 小时内重试会沿用同一请求"
+                        isAutomatic ? "自动使用未完成，临期内将安全重试" : "使用失败；24 小时内重试会沿用同一请求"
                     )
                 }
             }
@@ -520,7 +589,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
     private func persistPendingResetRequests() {
         guard !pendingResetRequests.isEmpty else {
-            UserDefaults.standard.removeObject(
+            defaults.removeObject(
                 forKey: Self.pendingResetRequestsDefaultsKey
             )
             return
@@ -528,7 +597,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         guard let data = try? JSONEncoder().encode(pendingResetRequests) else {
             return
         }
-        UserDefaults.standard.set(
+        defaults.set(
             data,
             forKey: Self.pendingResetRequestsDefaultsKey
         )

@@ -260,9 +260,14 @@ public enum CodexOverlayGeometry {
         guard accountControlFrame.width + additionalControlsWidth >= sidebarFrame.width * 0.55 else {
             return nil
         }
+        // AX can omit the microphone or include it in the account control's frame.
+        // Missing an action must not give its hit area to the overlay.
+        let protectedTrailingControlX = footerButtons.isEmpty
+            ? trailingButtonFrame.minX - max(32, trailingButtonFrame.width) - trailingControlGap
+            : firstTrailingControlX
         return CodexTaskSidebarFooterMetrics(
             centerBottomInset: sidebarFrame.maxY - footerCenterY,
-            trailingControlMinX: firstTrailingControlX
+            trailingControlMinX: protectedTrailingControlX
         )
     }
 

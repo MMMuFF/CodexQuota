@@ -33,10 +33,13 @@ final class QuotaOverlayPanel: NSPanel {
 
 @MainActor
 final class QuotaChipView: NSView {
+    private static let leadingInset: CGFloat = 4
+    private static let trailingInset: CGFloat = 2
     var onHoverChanged: ((Bool) -> Void)?
     var onActivate: (() -> Void)?
 
     private let label = NSTextField(labelWithString: "-- · 读取中")
+    private var fullTitle = "-- · 读取中"
     private var hoverTrackingArea: NSTrackingArea?
     private var isHovered = false
     private var isExpanded = false
@@ -58,13 +61,34 @@ final class QuotaChipView: NSView {
         tooltip: String,
         usageDeviation: QuotaUsageDeviation?
     ) {
+        fullTitle = title
         label.stringValue = title
         self.usageDeviation = usageDeviation
         let deviationDescription = usageDeviation.map {
             "。\(QuotaDisplayFormatter.usageDeviationAccessibilityText($0))"
         } ?? ""
         setAccessibilityLabel("Codex 额度。\(tooltip)\(deviationDescription)")
+        needsLayout = true
         needsDisplay = true
+    }
+
+    override func layout() {
+        super.layout()
+        let compactTitle = fullTitle
+            .replacingOccurrences(of: "月", with: "/")
+            .replacingOccurrences(of: "日", with: "")
+            .replacingOccurrences(of: " · ", with: "·")
+        let percentTitle = fullTitle.components(separatedBy: " · ").first ?? fullTitle
+        let candidates = [fullTitle, compactTitle, percentTitle]
+        guard let measuringCell = label.cell?.copy() as? NSTextFieldCell else { return }
+        let fittedTitle = candidates.first { candidate in
+            measuringCell.stringValue = candidate
+            return measuringCell.cellSize.width <= max(0, bounds.width - Self.leadingInset - Self.trailingInset)
+        } ?? percentTitle
+        if label.stringValue != fittedTitle {
+            label.stringValue = fittedTitle
+            needsDisplay = true
+        }
     }
 
     func setExpanded(_ expanded: Bool) {
@@ -168,8 +192,8 @@ final class QuotaChipView: NSView {
 
         addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leadingInset),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.trailingInset),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
 

@@ -79,6 +79,7 @@ private struct CodexQuotaCoreTestRunner {
             ("额度组件跟随账户底栏中心线", overlayBadgeFollowsFooterCenter),
             ("额度组件避让底栏新增语音按钮", overlayBadgeAvoidsAdditionalFooterButtons),
             ("额度组件避让带文字的宽语音按钮", overlayBadgeAvoidsLabeledFooterButton),
+            ("麦克风漏识别时仍保留按钮位", overlayReservesMissingVoiceButton),
             ("窄侧栏新增按钮不导致底栏识别失效", overlayFooterWithNarrowAccount),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
@@ -1543,8 +1544,8 @@ private struct CodexQuotaCoreTestRunner {
             "账户底栏中心距底部计算错误"
         )
         try expect(
-            footerMetrics.trailingControlMinX == 493,
-            "未取得右侧问号的真实左边界"
+            footerMetrics.trailingControlMinX == 457,
+            "问号左侧未保守预留一个麦克风按钮位"
         )
 
         let window = CGRect(x: 258, y: 333, width: 1_679, height: 970)
@@ -1563,8 +1564,8 @@ private struct CodexQuotaCoreTestRunner {
             "额度组件仍在使用固定的底部偏移"
         )
         try expect(
-            abs(frame.maxX - 489) < 0.001,
-            "额度组件没有给右侧问号留出空间"
+            abs(frame.maxX - 453) < 0.001,
+            "额度组件没有给麦克风预留位置"
         )
         try expect(
             CGRect(x: 493, y: 1_140, width: 32, height: 32).minX - frame.maxX >= 4,
@@ -1606,6 +1607,28 @@ private struct CodexQuotaCoreTestRunner {
             trailingControlMinX: metrics.trailingControlMinX
         )
         try expect(badge.maxX <= voice.minX - 4, "额度覆盖带文字的语音按钮")
+    }
+
+    private static func overlayReservesMissingVoiceButton() throws {
+        // A wide account AX frame must not make the unreported microphone slot usable.
+        let sidebar = CGRect(x: 14, y: 0, width: 306, height: 800)
+        let account = CGRect(x: 22, y: 754, width: 250, height: 32)
+        let help = CGRect(x: 280, y: 754, width: 32, height: 32)
+        let microphone = CGRect(x: 244, y: 754, width: 32, height: 32)
+        for reportedButtons in [[], [microphone]] {
+            let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                sidebarFrame: sidebar, accountControlFrame: account,
+                trailingButtonFrame: help, additionalButtonFrames: reportedButtons
+            ), "漏识别语音按钮时账户底栏消失")
+            let badge = CodexOverlayGeometry.badgeFrame(
+                for: CGRect(x: 14, y: 0, width: 1_200, height: 800),
+                footerCenterBottomInset: metrics.centerBottomInset,
+                trailingControlMinX: metrics.trailingControlMinX
+            )
+            try expect(badge.maxX <= microphone.minX - 4, "额度面板仍占用了麦克风按钮位")
+            try expect(badge.minX == 132, "保护麦克风后挤占昵称")
+            try expect(badge.width >= CodexOverlayGeometry.minimumBadgeWidth, "仍有空间却隐藏额度")
+        }
     }
 
     private static func overlayFooterWithNarrowAccount() throws {

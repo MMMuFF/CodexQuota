@@ -48,6 +48,7 @@ private struct AppTests {
         let checks: [(String, () throws -> Void)] = [
             ("详情卡包含自动使用勾选框", checkbox),
             ("悬停与展开时保留偏差下划线", underline),
+            ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
             ("新详情卡深浅色布局无裁切", popoverLayout),
         ]
         var failures = 0
@@ -180,6 +181,25 @@ private struct AppTests {
             let output = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
                 .appendingPathComponent("automatic-reset-\(name).png")
             try bitmap.representation(using: .png, properties: [:])?.write(to: output)
+        }
+    }
+
+    static func adaptiveChipTitle() throws {
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 220, height: 28))
+        let title = "46% · 9月15日 · 5天"
+        chip.update(title: title, tooltip: "完整日期与天数", usageDeviation: nil)
+        guard let label = chip.subviews.compactMap({ $0 as? NSTextField }).first else {
+            throw CheckFailure(message: "未找到额度文字")
+        }
+        for (width, expected) in [(108.0, "46%·9/15·5天"), (220.0, title), (44.0, "46%"), (220.0, title)] {
+            chip.setFrameSize(NSSize(width: width, height: 28))
+            chip.layoutSubtreeIfNeeded()
+            try expect(chip.bounds.contains(label.frame), "额度文字超出预留后的面板边界")
+            try expect((label.cell?.cellSize.width ?? label.intrinsicContentSize.width) <= label.frame.width,
+                       "预留麦克风后额度文字被截断")
+            try expect(label.stringValue == expected,
+                       "宽度 \(width)，实际 \(chip.bounds.width)，文字 \(label.stringValue)，期望 \(expected)")
+            try expect(chip.accessibilityLabel()?.contains("完整日期与天数") == true, "精简文字丢失完整辅助功能说明")
         }
     }
 

@@ -23,7 +23,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var currentStatus: QuotaStatus?
     private var isConsuming = false
     private var isConfirmingReset = false
-    private var interactionKeepsVisible = false
     private var pendingResetRequests: [String: PendingResetCreditRequest] = [:]
     private var isPointerOverChip = false
     private var isPointerOverPopover = false
@@ -224,14 +223,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     }
 
     private func updateOverlayPlacement() {
-        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-        let helperBundleIdentifier = Bundle.main.bundleIdentifier
-        let isCodexFrontmost = frontmostBundleIdentifier == CodexWindowLocator.bundleIdentifier
-        let isInteractingWithHelper = frontmostBundleIdentifier == helperBundleIdentifier
-            && (popover.isShown || interactionKeepsVisible || isConsuming)
-
-        guard isCodexFrontmost || isInteractingWithHelper,
-              let targetWindow = CodexWindowLocator.locateMainWindow() else {
+        guard let targetWindow = CodexWindowLocator.locateMainWindow() else {
             hideOverlay()
             return
         }
@@ -277,9 +269,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             overlayPanel.setFrame(frame, display: true)
         }
 
-        if !overlayPanel.isVisible {
-            overlayPanel.orderFrontRegardless()
-        }
+        // Keep the chip with its target instead of floating above unrelated apps.
+        overlayPanel.order(.above, relativeTo: targetWindow.windowID)
     }
 
     private func hideOverlay() {
@@ -314,9 +305,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         if overlayPanel.frame != frame {
             overlayPanel.setFrame(frame, display: true)
         }
-        if !overlayPanel.isVisible {
-            overlayPanel.orderFrontRegardless()
-        }
+        overlayPanel.order(.above, relativeTo: targetWindow.windowID)
     }
 
     private func restoreStandardChipIfNeeded() {
@@ -464,7 +453,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         }
 
         isConfirmingReset = true
-        interactionKeepsVisible = true
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
@@ -476,7 +464,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         let response = alert.runModal()
         isConfirmingReset = false
-        interactionKeepsVisible = false
         targetApplication?.activate(options: [.activateIgnoringOtherApps])
         updateOverlayPlacement()
 
@@ -485,7 +472,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     }
 
     private func confirmAndQuit() {
-        interactionKeepsVisible = true
         NSApp.activate(ignoringOtherApps: true)
 
         let alert = NSAlert()
@@ -496,7 +482,6 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         alert.addButton(withTitle: "取消")
 
         let response = alert.runModal()
-        interactionKeepsVisible = false
 
         if response == .alertFirstButtonReturn {
             NSApplication.shared.terminate(nil)

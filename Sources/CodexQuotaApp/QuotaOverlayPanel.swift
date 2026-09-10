@@ -17,7 +17,7 @@ final class QuotaOverlayPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
-        level = .floating
+        level = .normal
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]

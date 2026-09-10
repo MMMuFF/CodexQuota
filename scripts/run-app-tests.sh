@@ -23,8 +23,6 @@ swiftc -parse-as-library -swift-version 5 \
   "${project_dir}/Sources/CodexQuotaApp/QuotaPopoverViewController.swift" \
   "${project_dir}/Sources/CodexQuotaApp/QuotaOverlayPanel.swift" \
   "${project_dir}/Sources/CodexQuotaApp/StatusItemController.swift" \
-  "${project_dir}/Sources/CodexQuotaApp/CodexSidebarLocator.swift" \
-  "${project_dir}/Sources/CodexQuotaApp/CodexWindowLocator.swift" \
   "${project_dir}"/Tests/CodexQuotaAppTests/*.swift \
   -o "${test_dir}/CodexQuotaAppChecks"
 

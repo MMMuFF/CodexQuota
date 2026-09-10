@@ -50,6 +50,8 @@ private struct AppTests {
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
             ("新详情卡深浅色布局无裁切", popoverLayout),
+            ("切换到其他软件仍保留可见窗口的额度", backgroundOverlay),
+            ("额度面板不使用全局悬浮层", overlayWindowLevel),
         ]
         var failures = 0
         for (name, body) in checks {
@@ -74,6 +76,90 @@ private struct AppTests {
 
     static func settle() async throws {
         for _ in 0..<20 { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    static func overlayWindowLevel() throws {
+        let panel = QuotaOverlayPanel()
+        try expect(panel.level == .normal, "额度仍使用 floating 层，会盖在其他软件上方")
+        try expect(!panel.hidesOnDeactivate, "失去焦点时由 AppKit 自动隐藏")
+        try expect(!panel.canBecomeKey && !panel.canBecomeMain, "额度会抢走目标窗口焦点")
+    }
+
+    static func backgroundOverlay() throws {
+        let target = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 900, height: 600),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        target.orderBack(nil)
+        let oldPanels = Set(NSApp.windows.filter { $0 is QuotaOverlayPanel }.map(\.windowNumber))
+        let suite = "CodexQuotaAppTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let controller = QuotaOverlayController(service: FakeQuotaService(), defaults: defaults, startMonitoring: false)
+        guard let panel = NSApp.windows.first(where: {
+            $0 is QuotaOverlayPanel && !oldPanels.contains($0.windowNumber)
+        }) else { throw CheckFailure(message: "未找到新建的额度面板") }
+        defer {
+            panel.orderOut(nil)
+            target.orderOut(nil)
+            CodexWindowLocator.testWindow = nil
+            CodexSidebarLocator.testPlacement = .hidden
+            defaults.removePersistentDomain(forName: suite)
+        }
+        CodexWindowLocator.testWindow = LocatedCodexWindow(
+            application: .current, windowID: target.windowNumber,
+            frame: target.frame, accessibilityFrame: target.frame
+        )
+        CodexSidebarLocator.testPlacement = .visible(
+            trailingEdgeX: 450, footerCenterBottomInset: 32, trailingControlMinX: 400
+        )
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(panel.isVisible, "目标窗口仍可见，仅因切换应用就隐藏额度")
+
+        let other = NSWindow(
+            contentRect: NSRect(x: 650, y: 100, width: 300, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        defer { other.orderOut(nil) }
+        target.orderFrontRegardless()
+        other.orderFrontRegardless()
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        let windowOrder = (NSWindow.windowNumbers(options: []) ?? []).map(\.intValue)
+        guard let overlayIndex = windowOrder.firstIndex(of: panel.windowNumber),
+              let targetIndex = windowOrder.firstIndex(of: target.windowNumber),
+              let otherIndex = windowOrder.firstIndex(of: other.windowNumber) else {
+            throw CheckFailure(message: "测试窗口未进入窗口顺序列表")
+        }
+        try expect(otherIndex < overlayIndex && overlayIndex < targetIndex,
+                   "额度没有保持在目标窗口上方、其他前台窗口下方")
+
+        let movedFrame = target.frame.offsetBy(dx: 40, dy: 20)
+        target.setFrame(movedFrame, display: false)
+        CodexWindowLocator.testWindow = LocatedCodexWindow(
+            application: .current, windowID: target.windowNumber,
+            frame: movedFrame, accessibilityFrame: movedFrame
+        )
+        CodexSidebarLocator.testPlacement = .visible(
+            trailingEdgeX: 490, footerCenterBottomInset: 32, trailingControlMinX: 440
+        )
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(panel.isVisible && panel.frame == CodexOverlayGeometry.badgeFrame(
+            for: movedFrame, sidebarTrailingX: 490,
+            footerCenterBottomInset: 32, trailingControlMinX: 440
+        ), "后台时额度没有跟随目标窗口移动")
+
+        for placement: CodexSidebarPlacement in [.hidden, .unavailable] {
+            CodexSidebarLocator.testPlacement = placement
+            controller.perform(NSSelectorFromString("placementTimerFired"))
+            try expect(!panel.isVisible, "设置页、收起侧栏或定位不可用时仍残留额度")
+        }
+        CodexSidebarLocator.testPlacement = .visible(
+            trailingEdgeX: 490, footerCenterBottomInset: 32, trailingControlMinX: 440
+        )
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(panel.isVisible, "恢复侧栏后额度未重新显示")
+        CodexWindowLocator.testWindow = nil
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(!panel.isVisible, "目标窗口最小化、隐藏或不在当前 Space 时仍残留额度")
     }
 
     static func automaticConsumption() async throws {

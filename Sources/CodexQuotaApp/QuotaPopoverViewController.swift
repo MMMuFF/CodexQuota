@@ -7,6 +7,7 @@ final class QuotaPopoverViewController: NSViewController {
     var onRefresh: (() -> Void)?
     var onQuit: (() -> Void)?
     var onHoverChanged: ((Bool) -> Void)?
+    var onAutomaticResetChanged: ((Bool) -> Void)?
 
     private let summaryLabel = NSTextField(labelWithString: "-- · 读取中")
     private let timeProgressRow = QuotaProgressRowView(
@@ -21,6 +22,9 @@ final class QuotaPopoverViewController: NSViewController {
     private let subscriptionLabel = NSTextField(labelWithString: "会员到期：读取中")
     private let resetCreditLabel = NSTextField(labelWithString: "最早到期券：读取中")
     private let freshnessLabel = NSTextField(labelWithString: "正在连接 Codex…")
+    private let automaticResetCheckbox = NSButton(
+        checkboxWithTitle: "临期自动使用重置券", target: nil, action: nil
+    )
     private let useButton = NSButton(title: "使用重置券", target: nil, action: nil)
     private let refreshButton = NSButton(title: "刷新", target: nil, action: nil)
     private let quitButton = NSButton(title: "退出…", target: nil, action: nil)
@@ -70,6 +74,13 @@ final class QuotaPopoverViewController: NSViewController {
         quitButton.target = self
         quitButton.action = #selector(quit)
 
+        automaticResetCheckbox.font = .systemFont(ofSize: 12)
+        automaticResetCheckbox.state = .off
+        automaticResetCheckbox.isEnabled = false
+        automaticResetCheckbox.target = self
+        automaticResetCheckbox.action = #selector(automaticResetChanged)
+        automaticResetCheckbox.toolTip = "仅对此账户生效：最早到期券进入最后 30 分钟时自动尝试使用 1 张。需要应用运行且电脑保持唤醒联网。"
+
         let detailStack = NSStackView(views: [subscriptionLabel, resetCreditLabel])
         detailStack.orientation = .vertical
         detailStack.alignment = .leading
@@ -96,7 +107,7 @@ final class QuotaPopoverViewController: NSViewController {
         actionRow.spacing = 8
 
         let stack = NSStackView(
-            views: [summaryLabel, progressSection, detailStack, freshnessLabel, actionRow]
+            views: [summaryLabel, progressSection, detailStack, freshnessLabel, automaticResetCheckbox, actionRow]
         )
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -120,12 +131,18 @@ final class QuotaPopoverViewController: NSViewController {
         ])
 
         view = root
-        preferredContentSize = NSSize(width: 316, height: 230)
+        preferredContentSize = NSSize(width: 316, height: 258)
+    }
+
+    func updateAutomaticReset(enabled: Bool, available: Bool) {
+        automaticResetCheckbox.state = enabled ? .on : .off
+        automaticResetCheckbox.isEnabled = available
     }
 
     func showLoading(previousStatus: QuotaStatus?) {
         refreshButton.isEnabled = false
         useButton.isEnabled = false
+        automaticResetCheckbox.isEnabled = false
         freshnessLabel.stringValue = previousStatus == nil ? "正在连接 Codex…" : "正在刷新…"
     }
 
@@ -174,6 +191,7 @@ final class QuotaPopoverViewController: NSViewController {
     }
 
     func setConsuming(_ consuming: Bool) {
+        automaticResetCheckbox.isEnabled = !consuming && currentStatus?.accountFingerprint != nil
         let actionState = QuotaDisplayFormatter.resetCreditActionState(
             availableCount: currentStatus?.accountFingerprint == nil
                 ? nil
@@ -202,6 +220,10 @@ final class QuotaPopoverViewController: NSViewController {
 
     @objc private func useResetCredit() {
         onUseResetCredit?()
+    }
+
+    @objc private func automaticResetChanged() {
+        onAutomaticResetChanged?(automaticResetCheckbox.state == .on)
     }
 
     @objc private func refresh() {

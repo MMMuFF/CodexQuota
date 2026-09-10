@@ -125,10 +125,7 @@ final class QuotaChipView: NSView {
             ).fill()
         }
 
-        guard let usageDeviation,
-              !needsAttention,
-              !isHovered,
-              !isExpanded else { return }
+        guard let usageDeviation, !needsAttention else { return }
 
         let underlineColor: NSColor
         switch usageDeviation.band {

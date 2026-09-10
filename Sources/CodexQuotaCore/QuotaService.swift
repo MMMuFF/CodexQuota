@@ -3,7 +3,14 @@ import Foundation
 import FoundationNetworking
 #endif
 
-public final class QuotaService {
+public protocol QuotaServicing {
+    func fetch(forceTokenRefresh: Bool) async throws -> QuotaStatus
+    func consumeResetCredit(
+        expectedAccountFingerprint: String, idempotencyKey: UUID, notAfter: Date?
+    ) async throws -> ResetCreditConsumeResult
+}
+
+public final class QuotaService: QuotaServicing {
     public init() {}
 
     public func fetch(forceTokenRefresh: Bool) async throws -> QuotaStatus {
@@ -118,7 +125,8 @@ public final class QuotaService {
 
     public func consumeResetCredit(
         expectedAccountFingerprint: String,
-        idempotencyKey: UUID = UUID()
+        idempotencyKey: UUID = UUID(),
+        notAfter: Date? = nil
     ) async throws -> ResetCreditConsumeResult {
         let executableURL = try CodexExecutableLocator.locate()
         let messages = AppServerRequestFactory.consumeRequests(
@@ -126,7 +134,8 @@ public final class QuotaService {
         )
         let output = try await AppServerClient(executableURL: executableURL).run(
             messages,
-            expectedAccountFingerprint: expectedAccountFingerprint
+            expectedAccountFingerprint: expectedAccountFingerprint,
+            resetCreditDeadline: notAfter
         )
         _ = try output.result(for: AppServerRequestFactory.accountRequestID)
         let consumeResult = try output.result(for: AppServerRequestFactory.operationRequestID)
@@ -211,7 +220,8 @@ private struct AppServerClient {
 
     func run(
         _ messages: [JSONDictionary],
-        expectedAccountFingerprint: String? = nil
+        expectedAccountFingerprint: String? = nil,
+        resetCreditDeadline: Date? = nil
     ) async throws -> AppServerOutput {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
@@ -219,7 +229,8 @@ private struct AppServerClient {
                     continuation.resume(
                         returning: try runSynchronously(
                             messages,
-                            expectedAccountFingerprint: expectedAccountFingerprint
+                            expectedAccountFingerprint: expectedAccountFingerprint,
+                            resetCreditDeadline: resetCreditDeadline
                         )
                     )
                 } catch {
@@ -231,7 +242,8 @@ private struct AppServerClient {
 
     private func runSynchronously(
         _ messages: [JSONDictionary],
-        expectedAccountFingerprint: String?
+        expectedAccountFingerprint: String?,
+        resetCreditDeadline: Date?
     ) throws -> AppServerOutput {
         let process = Process()
         let inputPipe = Pipe()
@@ -265,6 +277,10 @@ private struct AppServerClient {
         var envelopes: [JSONDictionary] = []
         do {
             for message in messages {
+                if JSONValue.int(message["id"]) == AppServerRequestFactory.operationRequestID,
+                   !AutomaticResetCreditPolicy.canSend(deadline: resetCreditDeadline, now: Date()) {
+                    throw QuotaServiceError.resetCreditExpired
+                }
                 var data = try JSONSerialization.data(withJSONObject: message)
                 data.append(0x0A)
                 try inputPipe.fileHandleForWriting.write(contentsOf: data)

@@ -13,7 +13,7 @@ enum CodexSidebarPlacement {
     case permissionRequired
     case unavailable
     case hidden
-    case visible(trailingEdgeX: CGFloat, footerCenterBottomInset: CGFloat?, trailingControlMinX: CGFloat?)
+    case visible(trailingEdgeX: CGFloat, footerCenterBottomInset: CGFloat?, trailingControlMinX: CGFloat?, accountContentMaxX: CGFloat? = nil)
 }
 
 @MainActor

@@ -32,7 +32,25 @@ private struct CodexQuotaCoreTestRunner {
     private typealias Check = (name: String, body: () throws -> Void)
 
     static func main() {
+        if CommandLine.arguments.contains("--english") {
+            do {
+                let date = ISO8601DateFormatter().date(from: "2026-09-19T08:00:00Z")!
+                let status = QuotaStatus(remainingPercent: 98, resetsAt: date, windowDurationMins: 10080,
+                    planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 3,
+                    nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-7 * 86400), warnings: [])
+                try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "English date or days missing")
+                try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt).hasPrefix("Earliest credit:"), "Credit detail untranslated")
+                try expect(QuotaDisplayFormatter.resetCreditActionState(availableCount: 0).title == "No reset credits", "Empty state untranslated")
+                let publicStatus = try PublicResetStatus.parse(PublicResetTests.fixture(scheduled: PublicResetTests.scheduled))
+                let title = publicStatus.presentation(now: date, timeZone: .gmt).title
+                try expect(title.contains("Pending confirmation"), "Public reset state untranslated")
+                try expect(QuotaServiceError.accountChanged.errorDescription?.contains("account changed") == true, "Error untranslated")
+                print("English core checks passed")
+            } catch { print("English core check failed: \(error)"); exit(1) }
+            return
+        }
         let checks: [Check] = [
+            ("系统首选语言选择中英文且其他语言安全回退", languageSelection),
             ("公共重置按电脑时区显示并处理跨日与夏令时", PublicResetTests.localTimeZones),
             ("公共重置预告过时待确认且区分发券", PublicResetTests.scheduledState),
             ("公共预测注明非官方并与历史公告区分", PublicResetTests.watchAndHistory),
@@ -87,6 +105,7 @@ private struct CodexQuotaCoreTestRunner {
             ("额度组件避让带文字的宽语音按钮", overlayBadgeAvoidsLabeledFooterButton),
             ("麦克风漏识别时仍保留按钮位", overlayReservesMissingVoiceButton),
             ("窄侧栏新增按钮不导致底栏识别失效", overlayFooterWithNarrowAccount),
+            ("短昵称回收空白且长昵称与语音按钮不被覆盖", overlayAccountContentBounds),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
             ("仅任务页账户底栏显示组件", overlayTaskSidebarFooter),
@@ -1683,6 +1702,47 @@ private struct CodexQuotaCoreTestRunner {
         try expect(widened.origin.x == current.origin.x, "动态面板左边界不稳定")
         try expect(widened.width == current.width + 80, "动态面板没有跟随侧边栏变宽")
         try expect(widened.midX == current.midX + 40, "额度文字没有保持在可用区域中央")
+    }
+
+    private static func overlayAccountContentBounds() throws {
+        for origin: CGFloat in [0, 40, -800] {
+            for width: CGFloat in [280, 306, 336, 360] {
+                let sidebar = CGRect(x: origin, y: 0, width: width, height: 800)
+                let account = CGRect(x: origin + 8, y: 754, width: width - 152, height: 32)
+                let voice = CGRect(x: sidebar.maxX - 136, y: 754, width: 92, height: 32)
+                let help = CGRect(x: sidebar.maxX - 40, y: 754, width: 32, height: 32)
+                for right: CGFloat in [74, width - 150] {
+                    let content = CGRect(x: origin + 24, y: 756, width: right - 24, height: 28)
+                    let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                        sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+                        additionalButtonFrames: [voice], accountVisibleContentFrame: content
+                    ), "有效底栏被拒绝")
+                    let badge = CodexOverlayGeometry.badgeFrame(for: CGRect(x: origin, y: 0, width: 1200, height: 800),
+                        trailingControlMinX: metrics.trailingControlMinX, accountContentMaxX: metrics.accountContentMaxX)
+                    try expect(badge.minX >= content.maxX + 4, "覆盖了昵称")
+                    try expect(badge.maxX <= voice.minX - 4, "覆盖了语音按钮")
+                    if right == 74 {
+                        try expect(badge.minX < origin + 90, "短昵称仍固定预留 118 点")
+                        if width >= 336 { try expect(badge.width >= 108, "常用宽度仍放不下紧凑日期与天数") }
+                    }
+                    let fallback = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                        sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
+                        additionalButtonFrames: [voice], accountVisibleContentFrame: CGRect(x: origin - 200, y: 0, width: 20, height: 20)
+                    ), "缺少昵称几何不应改变底栏类型")
+                    try expect(fallback.accountContentMaxX == account.maxX, "无效昵称边界未保护账户内容")
+                }
+            }
+        }
+    }
+
+    private static func languageSelection() throws {
+        for language in ["zh-Hans", "zh-Hant-TW", "zh_CN", "ZH-HK"] {
+            try expect(AppLanguage.resolve([language]) == .chinese, "中文系统未选择中文")
+        }
+        for language in ["en", "en-GB", "fr-FR", "ja-JP"] {
+            try expect(AppLanguage.resolve([language, "zh-Hans"]) == .english, "非中文首选语言未使用英文")
+        }
+        try expect(AppLanguage.resolve([]) == .english, "空语言列表未安全回退")
     }
 
     private static func overlaySidebarVisibility() throws {

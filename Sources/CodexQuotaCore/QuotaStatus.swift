@@ -66,23 +66,23 @@ public enum QuotaServiceError: Error, LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .codexExecutableNotFound:
-            return "未找到 Codex 可执行文件"
+            return L("未找到 Codex 可执行文件", "Codex executable not found")
         case .codexLaunchFailed:
-            return "无法启动 Codex app-server"
+            return L("无法启动 Codex app-server", "Could not start Codex app-server")
         case .appServerTimedOut:
-            return "Codex app-server 响应超时"
+            return L("Codex app-server 响应超时", "Codex app-server timed out")
         case let .codexExited(status):
-            return "Codex app-server 异常退出（\(status)）"
+            return L("Codex app-server 异常退出（\(status)）", "Codex app-server exited unexpectedly (\(status))")
         case .malformedAppServerResponse:
-            return "Codex app-server 返回了无法识别的数据"
+            return L("Codex app-server 返回了无法识别的数据", "Unrecognized data from Codex app-server")
         case let .appServerRequestFailed(message):
-            return "Codex app-server 请求失败：\(message)"
+            return L("Codex app-server 请求失败：\(message)", "Codex app-server request failed: \(message)")
         case .unsupportedResetCreditOutcome:
-            return "Codex 返回了未知的重置券结果"
+            return L("Codex 返回了未知的重置券结果", "Unknown reset credit result from Codex")
         case .accountChanged:
-            return "Codex 账户已切换，未使用重置券"
+            return L("Codex 账户已切换，未使用重置券", "Codex account changed; no credit used")
         case .resetCreditExpired:
-            return "临期重置券已过期，已取消自动使用"
+            return L("临期重置券已过期，已取消自动使用", "Reset credit expired; automatic use cancelled")
         }
     }
 }

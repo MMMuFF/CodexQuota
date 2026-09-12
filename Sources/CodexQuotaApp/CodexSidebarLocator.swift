@@ -9,7 +9,8 @@ enum CodexSidebarPlacement {
     case visible(
         trailingEdgeX: CGFloat,
         footerCenterBottomInset: CGFloat?,
-        trailingControlMinX: CGFloat?
+        trailingControlMinX: CGFloat?,
+        accountContentMaxX: CGFloat? = nil
     )
 }
 
@@ -303,11 +304,53 @@ final class CodexSidebarLocator {
             additionalButtonFrames: footerButtonFrames(
                 near: accountControl, accountFrame: accountFrame,
                 trailingFrame: trailingFrame, sidebarFrame: sidebarFrame
-            )
+            ),
+            accountVisibleContentFrame: accountContentFrame(of: accountControl, within: accountFrame)
         ) else {
             return .nonTask
         }
         return .task(metrics: metrics)
+    }
+
+    private func accountContentFrame(of control: AXUIElement, within accountFrame: CGRect) -> CGRect {
+        var queue: [(AXUIElement, Int)] = [(control, 0)]
+        var cursor = 0
+        var content: CGRect?
+        var hasText = false
+        while cursor < queue.count, cursor < 64 {
+            let (element, depth) = queue[cursor]
+            cursor += 1
+            let role = stringAttribute(element, kAXRoleAttribute as CFString)
+            if role == kAXStaticTextRole as String || role == kAXImageRole as String {
+                guard let elementFrame = frame(of: element) else { return accountFrame }
+                let visible = role == kAXStaticTextRole as String
+                    ? (textBounds(of: element) ?? elementFrame) : elementFrame
+                guard !visible.isEmpty, accountFrame.contains(visible) else { return accountFrame }
+                content = content.map { $0.union(visible) } ?? visible
+                hasText = hasText || role == kAXStaticTextRole as String
+            }
+            if let children = attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement], !children.isEmpty {
+                guard depth < 6 else { return accountFrame }
+                queue.append(contentsOf: children.map { ($0, depth + 1) })
+            }
+        }
+        guard cursor == queue.count, hasText, let content else { return accountFrame }
+        return content
+    }
+
+    private func textBounds(of element: AXUIElement) -> CGRect? {
+        guard let text = stringAttribute(element, kAXValueAttribute as CFString),
+              !text.isEmpty, text.utf16.count <= 512 else { return nil }
+        var range = CFRange(location: 0, length: text.utf16.count)
+        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element,
+            kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &result) == .success,
+              let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
+        let value = unsafeBitCast(result, to: AXValue.self)
+        var rect = CGRect.zero
+        guard AXValueGetType(value) == .cgRect, AXValueGetValue(value, .cgRect, &rect) else { return nil }
+        return rect
     }
 
     private func footerButtonFrames(
@@ -414,7 +457,8 @@ final class CodexSidebarLocator {
             return .visible(
                 trailingEdgeX: trailingEdgeX,
                 footerCenterBottomInset: lastFooterMetrics?.centerBottomInset,
-                trailingControlMinX: lastFooterMetrics?.trailingControlMinX
+                trailingControlMinX: lastFooterMetrics?.trailingControlMinX,
+                accountContentMaxX: lastFooterMetrics?.accountContentMaxX
             )
         case .hidden:
             lastFooterMetrics = nil

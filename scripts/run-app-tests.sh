@@ -26,4 +26,5 @@ swiftc -parse-as-library -swift-version 5 \
   "${project_dir}"/Tests/CodexQuotaAppTests/*.swift \
   -o "${test_dir}/CodexQuotaAppChecks"
 
-"${test_dir}/CodexQuotaAppChecks"
+"${test_dir}/CodexQuotaAppChecks" -AppleLanguages '(zh-Hans)'
+"${test_dir}/CodexQuotaAppChecks" --english -AppleLanguages '(en)'

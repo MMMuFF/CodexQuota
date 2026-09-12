@@ -35,8 +35,9 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var lastKnownSidebarTrailingX: CGFloat?
     private var lastKnownFooterCenterBottomInset: CGFloat?
     private var lastKnownTrailingControlMinX: CGFloat?
-    private var standardChipTitle = "-- · 读取中"
-    private var standardChipTooltip = "正在读取 Codex 额度"
+    private var lastKnownAccountContentMaxX: CGFloat?
+    private var standardChipTitle = L("-- · 读取中", "-- · Loading")
+    private var standardChipTooltip = L("正在读取 Codex 额度", "Loading Codex quota")
     private var standardChipDeviation: QuotaUsageDeviation?
 
     init(
@@ -132,7 +133,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             if enabled {
                 refresh(forceTokenRefresh: true)
             } else {
-                popoverController.showActionMessage("已关闭此账户的临期自动使用")
+                popoverController.showActionMessage(L("已关闭此账户的临期自动使用", "Automatic credit use disabled for this account"))
             }
         }
         popoverController.onQuit = { [weak self] in
@@ -261,24 +262,28 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             restoreStandardChipIfNeeded()
             lastKnownFooterCenterBottomInset = nil
             lastKnownTrailingControlMinX = nil
+            lastKnownAccountContentMaxX = nil
             hideOverlay()
             return
         case let .visible(
             trailingEdgeX,
             footerCenterBottomInset,
-            trailingControlMinX
+            trailingControlMinX,
+            accountContentMaxX
         ):
             restoreStandardChipIfNeeded()
             lastKnownSidebarTrailingX = trailingEdgeX
             lastKnownFooterCenterBottomInset = footerCenterBottomInset
             lastKnownTrailingControlMinX = trailingControlMinX
+            lastKnownAccountContentMaxX = accountContentMaxX
             sidebarTrailingX = trailingEdgeX
         }
         let frame = CodexOverlayGeometry.badgeFrame(
             for: targetWindow.frame,
             sidebarTrailingX: sidebarTrailingX,
             footerCenterBottomInset: lastKnownFooterCenterBottomInset,
-            trailingControlMinX: lastKnownTrailingControlMinX
+            trailingControlMinX: lastKnownTrailingControlMinX,
+            accountContentMaxX: lastKnownAccountContentMaxX
         )
         guard frame.width >= CodexOverlayGeometry.minimumBadgeWidth else {
             hideOverlay()
@@ -307,8 +312,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             isShowingAccessibilityPrompt = true
             overlayPanel.chipView.setNeedsAttention(true)
             overlayPanel.chipView.update(
-                title: "请开启辅助功能",
-                tooltip: "点击打开系统设置，授权后将自动恢复 Codex 额度",
+                title: L("请开启辅助功能", "Enable Accessibility"),
+                tooltip: L("点击打开系统设置，授权后将自动恢复 Codex 额度", "Click to open System Settings. Quota resumes after Accessibility is allowed."),
                 usageDeviation: nil
             )
         }
@@ -319,7 +324,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             for: targetWindow.frame,
             sidebarTrailingX: fallbackTrailingX,
             footerCenterBottomInset: lastKnownFooterCenterBottomInset,
-            trailingControlMinX: lastKnownTrailingControlMinX
+            trailingControlMinX: lastKnownTrailingControlMinX,
+            accountContentMaxX: lastKnownAccountContentMaxX
         )
         if overlayPanel.frame != frame {
             overlayPanel.setFrame(frame, display: true)
@@ -431,8 +437,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
             available: false
         )
         guard currentStatus == nil else { return }
-        standardChipTitle = "-- · 读取失败"
-        standardChipTooltip = "Codex 额度读取失败；点击后可重试"
+        standardChipTitle = L("-- · 读取失败", "-- · Unavailable")
+        standardChipTooltip = L("Codex 额度读取失败；点击后可重试", "Could not load Codex quota; click to retry")
         standardChipDeviation = nil
         if !isShowingAccessibilityPrompt {
             overlayPanel.chipView.update(
@@ -497,10 +503,10 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "使用 1 张额度重置券？"
-        alert.informativeText = "这会立即重置当前可用的 Codex 额度，且无法撤销。系统会使用一张可用重置券。"
-        alert.addButton(withTitle: "确认使用")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("使用 1 张额度重置券？", "Use one reset credit?")
+        alert.informativeText = L("这会立即重置当前可用的 Codex 额度，且无法撤销。系统会使用一张可用重置券。", "This immediately resets your available Codex quota and cannot be undone. One available reset credit will be used.")
+        alert.addButton(withTitle: L("确认使用", "Use credit"))
+        alert.addButton(withTitle: L("取消", "Cancel"))
 
         let response = alert.runModal()
         isConfirmingReset = false
@@ -516,10 +522,10 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "退出 Codex 昵称额度？"
-        alert.informativeText = "退出后额度显示和临期自动使用重置券都会停止；下次登录时会自动启动。"
-        alert.addButton(withTitle: "退出")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("退出 Codex 昵称额度？", "Quit CodexQuota?")
+        alert.informativeText = L("退出后额度显示和临期自动使用重置券都会停止；下次登录时会自动启动。", "The quota overlay and automatic credit use will stop. The app starts again at your next login.")
+        alert.addButton(withTitle: L("退出", "Quit"))
+        alert.addButton(withTitle: L("取消", "Cancel"))
 
         let response = alert.runModal()
 
@@ -569,15 +575,15 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
                     refresh(forceTokenRefresh: false)
                     if !isAutomatic { showPopover() }
                     popoverController.showActionMessage(isAutomatic
-                        ? "已自动使用临期重置券，正在更新…" : "额度已重置，正在更新…")
+                        ? L("已自动使用临期重置券，正在更新…", "Expiring credit used automatically; refreshing…") : L("额度已重置，正在更新…", "Quota reset; refreshing…"))
                 case .nothingToReset:
                     if !isAutomatic { showPopover() }
                     popoverController.showActionMessage(isAutomatic
-                        ? "当前无需重置，临期内将继续检查" : "当前额度无需重置，重置券未消耗")
+                        ? L("当前无需重置，临期内将继续检查", "No reset needed; will check again before expiry") : L("当前额度无需重置，重置券未消耗", "No reset needed; no credit used"))
                 case .noCredit:
                     refresh(forceTokenRefresh: false)
                     if !isAutomatic { showPopover() }
-                    popoverController.showActionMessage("当前没有可用重置券")
+                    popoverController.showActionMessage(L("当前没有可用重置券", "No reset credits available"))
                 }
             } catch {
                 isConsuming = false
@@ -586,17 +592,17 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
                 if (error as? QuotaServiceError) == .resetCreditExpired {
                     removePendingResetRequest(for: expectedAccountFingerprint)
                     automaticReset.recordOutcome(.noCredit, for: pendingRequest, expiration: expiration)
-                    popoverController.showActionMessage("临期券已过期，已取消自动使用")
+                    popoverController.showActionMessage(L("临期券已过期，已取消自动使用", "Credit expired; automatic use cancelled"))
                 } else if (error as? QuotaServiceError) == .accountChanged {
                     removePendingResetRequest(for: expectedAccountFingerprint)
                     automaticReset.recordOutcome(.nothingToReset, for: pendingRequest, expiration: expiration)
                     popoverController.showActionMessage(
-                        "账户已切换，未使用重置券；正在刷新…"
+                        L("账户已切换，未使用重置券；正在刷新…", "Account changed; no credit used. Refreshing…")
                     )
                     refresh(forceTokenRefresh: true)
                 } else {
                     popoverController.showActionMessage(
-                        isAutomatic ? "自动使用未完成，临期内将安全重试" : "使用失败；24 小时内重试会沿用同一请求"
+                        isAutomatic ? L("自动使用未完成，临期内将安全重试", "Automatic use incomplete; will safely retry before expiry") : L("使用失败；24 小时内重试会沿用同一请求", "Use failed; retries within 24 hours reuse the same request")
                     )
                 }
             }

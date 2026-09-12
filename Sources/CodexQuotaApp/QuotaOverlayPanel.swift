@@ -38,8 +38,8 @@ final class QuotaChipView: NSView {
     var onHoverChanged: ((Bool) -> Void)?
     var onActivate: (() -> Void)?
 
-    private let label = NSTextField(labelWithString: "-- · 读取中")
-    private var fullTitle = "-- · 读取中"
+    private let label = NSTextField(labelWithString: L("-- · 读取中", "-- · Loading"))
+    private var fullTitle = L("-- · 读取中", "-- · Loading")
     private var hoverTrackingArea: NSTrackingArea?
     private var isHovered = false
     private var isExpanded = false
@@ -68,7 +68,7 @@ final class QuotaChipView: NSView {
         let deviationDescription = usageDeviation.map {
             "。\(QuotaDisplayFormatter.usageDeviationAccessibilityText($0))"
         } ?? ""
-        let accessibilityText = "Codex 额度。\(tooltip)\(deviationDescription)"
+        let accessibilityText = L("Codex 额度。\(tooltip)\(deviationDescription)", "Codex quota. \(tooltip)\(deviationDescription)")
         if accessibilityLabel() != accessibilityText { setAccessibilityLabel(accessibilityText) }
         if deviationChanged { needsDisplay = true }
     }
@@ -79,12 +79,16 @@ final class QuotaChipView: NSView {
     }
 
     private func updateFittedTitle() {
-        let compactTitle = fullTitle
+        var compactTitle = fullTitle
             .replacingOccurrences(of: "月", with: "/")
             .replacingOccurrences(of: "日", with: "")
             .replacingOccurrences(of: " · ", with: "·")
+        for (index, month) in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].enumerated() {
+            compactTitle = compactTitle.replacingOccurrences(of: "\(month) ", with: "\(index + 1)/")
+        }
         let percentTitle = fullTitle.components(separatedBy: " · ").first ?? fullTitle
-        let candidates = [fullTitle, compactTitle, percentTitle]
+        let dateTitle = compactTitle.components(separatedBy: "·").prefix(2).joined(separator: "·")
+        let candidates = [fullTitle, compactTitle, dateTitle, percentTitle]
         guard let measuringCell = label.cell?.copy() as? NSTextFieldCell else { return }
         let fittedTitle = candidates.first { candidate in
             measuringCell.stringValue = candidate
@@ -203,6 +207,6 @@ final class QuotaChipView: NSView {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Codex 额度读取中")
+        setAccessibilityLabel(L("Codex 额度读取中", "Loading Codex quota"))
     }
 }

@@ -33,6 +33,11 @@ private struct CodexQuotaCoreTestRunner {
 
     static func main() {
         let checks: [Check] = [
+            ("公共重置按电脑时区显示并处理跨日与夏令时", PublicResetTests.localTimeZones),
+            ("公共重置预告过时待确认且区分发券", PublicResetTests.scheduledState),
+            ("公共预测注明非官方并与历史公告区分", PublicResetTests.watchAndHistory),
+            ("公共公告拒绝损坏响应和不可信链接", PublicResetTests.malformedAndLinks),
+            ("个人额度与会员默认采用电脑时区", PublicResetTests.accountTimeZoneDefaults),
             ("真实 7 天结构得到 39% 剩余", liveRateLimitShape),
             ("多窗口选择最长周期", longestWindowWins),
             ("JWT 订阅字段本机解码", jwtSubscriptionClaim),

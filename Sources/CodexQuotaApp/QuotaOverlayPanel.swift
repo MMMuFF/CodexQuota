@@ -62,18 +62,23 @@ final class QuotaChipView: NSView {
         usageDeviation: QuotaUsageDeviation?
     ) {
         fullTitle = title
-        label.stringValue = title
+        updateFittedTitle()
+        let deviationChanged = self.usageDeviation != usageDeviation
         self.usageDeviation = usageDeviation
         let deviationDescription = usageDeviation.map {
             "。\(QuotaDisplayFormatter.usageDeviationAccessibilityText($0))"
         } ?? ""
-        setAccessibilityLabel("Codex 额度。\(tooltip)\(deviationDescription)")
-        needsLayout = true
-        needsDisplay = true
+        let accessibilityText = "Codex 额度。\(tooltip)\(deviationDescription)"
+        if accessibilityLabel() != accessibilityText { setAccessibilityLabel(accessibilityText) }
+        if deviationChanged { needsDisplay = true }
     }
 
     override func layout() {
         super.layout()
+        updateFittedTitle()
+    }
+
+    private func updateFittedTitle() {
         let compactTitle = fullTitle
             .replacingOccurrences(of: "月", with: "/")
             .replacingOccurrences(of: "日", with: "")
@@ -103,9 +108,9 @@ final class QuotaChipView: NSView {
     }
 
     override func updateTrackingAreas() {
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
+        super.updateTrackingAreas()
+        // inVisibleRect follows resizing automatically; re-registering can retrigger entry.
+        guard hoverTrackingArea == nil else { return }
 
         let area = NSTrackingArea(
             rect: .zero,
@@ -115,7 +120,6 @@ final class QuotaChipView: NSView {
         )
         addTrackingArea(area)
         hoverTrackingArea = area
-        super.updateTrackingAreas()
     }
 
     override func mouseEntered(with event: NSEvent) {

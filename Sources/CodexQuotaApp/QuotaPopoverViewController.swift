@@ -456,9 +456,8 @@ private final class HoverVisualEffectView: NSVisualEffectView {
     private var hoverTrackingArea: NSTrackingArea?
 
     override func updateTrackingAreas() {
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
+        super.updateTrackingAreas()
+        guard hoverTrackingArea == nil else { return }
 
         let area = NSTrackingArea(
             rect: .zero,
@@ -468,8 +467,6 @@ private final class HoverVisualEffectView: NSVisualEffectView {
         )
         addTrackingArea(area)
         hoverTrackingArea = area
-
-        super.updateTrackingAreas()
     }
 
     override func mouseEntered(with event: NSEvent) {

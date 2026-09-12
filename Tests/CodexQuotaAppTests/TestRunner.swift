@@ -64,6 +64,8 @@ private struct AppTests {
             ("公告按时区重排且保留刷新禁用状态", publicResetTimeZone),
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
+            ("重复悬停刷新不在长短额度文案间闪烁", stableCompactRefresh),
+            ("额度和详情卡的鼠标感应区域不反复重建", stableHoverTracking),
             ("新详情卡深浅色布局无裁切", popoverLayout),
             ("切换到其他软件仍保留可见窗口的额度", backgroundOverlay),
             ("额度面板不使用全局悬浮层", overlayWindowLevel),
@@ -448,6 +450,42 @@ private struct AppTests {
             try expect(label.stringValue == expected,
                        "宽度 \(width)，实际 \(chip.bounds.width)，文字 \(label.stringValue)，期望 \(expected)")
             try expect(chip.accessibilityLabel()?.contains("完整日期与天数") == true, "精简文字丢失完整辅助功能说明")
+        }
+    }
+
+    static func stableCompactRefresh() throws {
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 108, height: 28))
+        let title = "46% · 9月15日 · 5天"
+        chip.update(title: title, tooltip: "完整日期", usageDeviation: nil)
+        chip.layoutSubtreeIfNeeded()
+        guard let label = chip.subviews.compactMap({ $0 as? NSTextField }).first else {
+            throw CheckFailure(message: "未找到额度文字")
+        }
+        try expect(label.stringValue == "46%·9/15·5天", "未进入窄侧栏文案")
+        for _ in 0..<100 {
+            chip.update(title: title, tooltip: "完整日期", usageDeviation: nil)
+            try expect(label.stringValue == "46%·9/15·5天", "刷新瞬间先写回长文案，等待下一帧才恢复短文案")
+            chip.layoutSubtreeIfNeeded()
+        }
+        chip.update(title: "45% · 9月15日 · 5天", tooltip: "已更新", usageDeviation: nil)
+        try expect(label.stringValue == "45%·9/15·5天", "真实额度变化没有立即显示")
+    }
+
+    static func stableHoverTracking() throws {
+        let controller = QuotaPopoverViewController()
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 108, height: 28))
+        for view in [chip, controller.view] {
+            view.updateTrackingAreas()
+            guard let original = view.trackingAreas.first(where: { $0.options.contains(.inVisibleRect) }) else {
+                throw CheckFailure(message: "缺少随可见区域移动的感应区域")
+            }
+            for _ in 0..<100 {
+                view.updateTrackingAreas()
+                try expect(view.trackingAreas.contains { $0 === original }, "重复注册感应区域会重新触发鼠标进入事件")
+            }
+            view.setFrameSize(NSSize(width: 210, height: view.frame.height))
+            view.updateTrackingAreas()
+            try expect(view.trackingAreas.contains { $0 === original }, "缩放应由 inVisibleRect 自动跟随，不应重新注册")
         }
     }
 

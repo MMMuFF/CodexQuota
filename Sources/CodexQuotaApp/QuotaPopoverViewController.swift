@@ -463,7 +463,7 @@ private final class QuotaProgressTrack: NSView {
         super.init(frame: frame)
         marker.boxType = .custom
         marker.borderWidth = 0
-        marker.fillColor = .labelColor
+        marker.fillColor = .secondaryLabelColor
         marker.cornerRadius = 0.5
         marker.identifier = NSUserInterfaceItemIdentifier("exhaustion-marker")
         marker.isHidden = true

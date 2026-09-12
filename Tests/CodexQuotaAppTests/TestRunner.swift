@@ -231,6 +231,9 @@ private struct AppTests {
         try expect(markers.count == 1, "时间条没有唯一的耗尽竖线")
         guard let marker = markers.first, let track = marker.superview else { return }
         let labels = descendants(of: root).compactMap { $0 as? NSTextField }
+        let forecastColor = labels.first(where: { $0.stringValue.hasPrefix("均速预计") })?.textColor
+        try expect(forecastColor != nil && (marker as? NSBox)?.fillColor == forecastColor,
+            "竖线颜色未与预计用完文字统一")
         try expect(track.superview === labels.first(where: { $0.stringValue == "时间已过" })?.superview,
             "耗尽标记不在时间条上")
         try expect(abs(marker.frame.midX / track.bounds.width - 0.4) < 0.01, "时间已过 20%、额度已用 50% 应标在周期 40%")

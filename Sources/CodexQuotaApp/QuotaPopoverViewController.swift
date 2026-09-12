@@ -28,6 +28,7 @@ final class QuotaPopoverViewController: NSViewController {
     private let freshnessLabel = NSTextField(labelWithString: "正在连接 Codex…")
     private let publicResetLabel = NSTextField(wrappingLabelWithString: "Tibo 重置：读取中…")
     private let publicResetLatestLabel = NSTextField(wrappingLabelWithString: "最近公告：读取中…")
+    private let publicResetConfidenceLabel = NSTextField(wrappingLabelWithString: "")
     private let publicResetInfoLabel = NSTextField(labelWithString: "· 本机时间")
     private let publicResetWarningLabel = NSTextField(labelWithString: "")
     private let publicResetSourceButton = NSButton(title: "查看来源", target: nil, action: nil)
@@ -79,7 +80,7 @@ final class QuotaPopoverViewController: NSViewController {
         forecastLabel.textColor = .secondaryLabelColor
         forecastLabel.lineBreakMode = .byTruncatingTail
 
-        for label in [publicResetLabel, publicResetLatestLabel, publicResetInfoLabel, publicResetWarningLabel] {
+        for label in [publicResetLabel, publicResetLatestLabel, publicResetConfidenceLabel, publicResetInfoLabel, publicResetWarningLabel] {
             label.font = .systemFont(ofSize: 11)
             label.textColor = .secondaryLabelColor
             label.maximumNumberOfLines = 2
@@ -90,6 +91,7 @@ final class QuotaPopoverViewController: NSViewController {
         publicResetInfoLabel.toolTip = "本机时区：\(TimeZone.autoupdatingCurrent.identifier)\nCodex Resets · 第三方公告追踪"
         publicResetInfoLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         publicResetWarningLabel.isHidden = true
+        publicResetConfidenceLabel.isHidden = true
         publicResetSourceButton.bezelStyle = .inline
         publicResetSourceButton.controlSize = .small
         publicResetSourceButton.isEnabled = false
@@ -97,7 +99,8 @@ final class QuotaPopoverViewController: NSViewController {
         publicResetSourceButton.target = self
         publicResetSourceButton.action = #selector(openPublicResetSource)
         let publicResetSection = verticalStack([
-            publicResetLabel, row(publicResetLatestLabel, publicResetSourceButton), publicResetWarningLabel
+            publicResetLabel, publicResetConfidenceLabel,
+            row(publicResetLatestLabel, publicResetSourceButton), publicResetWarningLabel
         ], spacing: 6)
 
         useButton.bezelStyle = .rounded
@@ -149,7 +152,7 @@ final class QuotaPopoverViewController: NSViewController {
         let header = row(balanceGroup, dates)
         header.heightAnchor.constraint(equalToConstant: 44).isActive = true
 
-        let progressSection = verticalStack([timeProgressRow, quotaProgressRow, forecastLabel], spacing: 6)
+        let progressSection = verticalStack([quotaProgressRow, timeProgressRow, forecastLabel], spacing: 6)
         forecastLabel.toolTip = "按本周期平均消耗速度估算，仅供参考。周期初期样本较少，预计时间可能大幅波动。"
         let detailStack = verticalStack([
             row(subscriptionCaption, subscriptionLabel),
@@ -260,11 +263,11 @@ final class QuotaPopoverViewController: NSViewController {
             ? "最早 " + credit.components(separatedBy: "：").dropFirst().joined(separator: "：")
             : (status.resetCreditsAvailableCount == 0 ? "暂无" : "到期时间暂不可用")
         resetCreditLabel.toolTip = credit
-        updateProgress(QuotaCycleProgress.calculate(for: status))
         forecastLabel.stringValue = QuotaDisplayFormatter.exhaustionForecastText(
             for: status,
             timeZone: timeZone
         ).replacingOccurrences(of: "按周期均速，预计", with: "均速预计")
+        updateProgress(QuotaCycleProgress.calculate(for: status))
 
     }
 
@@ -275,12 +278,14 @@ final class QuotaPopoverViewController: NSViewController {
         let presentation = status?.presentation(timeZone: timeZone)
         publicResetLabel.stringValue = presentation?.title ?? (failed ? "Tibo 重置：暂不可用" : "Tibo 重置：读取中…")
         publicResetLatestLabel.stringValue = presentation?.latest ?? "最近公告：尚未读取"
+        publicResetConfidenceLabel.stringValue = presentation?.confidence ?? ""
+        publicResetConfidenceLabel.isHidden = presentation?.confidence == nil
         let state = failed ? (status == nil ? "公告连接失败" : "刷新失败，显示上次公告") : "第三方公告追踪"
         publicResetInfoLabel.stringValue = "· 本机时间"
         publicResetWarningLabel.stringValue = failed ? state : ""
         publicResetWarningLabel.isHidden = !failed
-        preferredContentSize.height = failed ? 370 : 350
-        for label in [publicResetLabel, publicResetLatestLabel, publicResetInfoLabel] {
+        preferredContentSize.height = (failed ? 370 : 350) + (presentation?.confidence == nil ? 0 : 24)
+        for label in [publicResetLabel, publicResetLatestLabel, publicResetConfidenceLabel, publicResetInfoLabel] {
             label.toolTip = "\(state)\n" + (presentation?.detail ?? "本机时区：\(timeZone.identifier)\nCodex Resets · 第三方公告追踪")
         }
         publicResetSourceURL = presentation?.sourceURL
@@ -336,7 +341,9 @@ final class QuotaPopoverViewController: NSViewController {
     private func updateProgress(_ progress: QuotaCycleProgress?) {
         timeProgressRow.update(
             fraction: progress?.timeElapsedFraction,
-            percent: progress?.timeElapsedPercent
+            percent: progress?.timeElapsedPercent,
+            markerFraction: progress?.exhaustionTimeFraction,
+            markerHelp: "竖线为预计用完点 · \(forecastLabel.stringValue)\n按本周期均速估算，仅供参考。"
         )
         quotaProgressRow.update(
             fraction: progress?.quotaUsedFraction,
@@ -396,7 +403,7 @@ private final class QuotaProgressRowView: NSStackView {
 
         NSLayoutConstraint.activate([
             titleLabel.widthAnchor.constraint(equalToConstant: 48),
-            progressIndicator.heightAnchor.constraint(equalToConstant: 8),
+            progressIndicator.heightAnchor.constraint(equalToConstant: 12),
             progressIndicator.widthAnchor.constraint(greaterThanOrEqualToConstant: 150),
             percentLabel.widthAnchor.constraint(equalToConstant: 34),
             heightAnchor.constraint(equalToConstant: 18),
@@ -410,13 +417,16 @@ private final class QuotaProgressRowView: NSStackView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(fraction: Double?, percent: Int?) {
+    func update(fraction: Double?, percent: Int?, markerFraction: Double? = nil, markerHelp: String? = nil) {
         guard let fraction, let percent else {
             setUnavailable()
             return
         }
 
         progressIndicator.doubleValue = fraction
+        progressIndicator.markerFraction = markerFraction
+        progressIndicator.toolTip = markerFraction == nil ? nil : markerHelp
+        progressIndicator.setAccessibilityHelp(markerFraction == nil ? nil : markerHelp)
         percentLabel.stringValue = "\(percent)%"
         setAccessibilityElement(false)
         progressIndicator.setAccessibilityElement(true)
@@ -427,6 +437,9 @@ private final class QuotaProgressRowView: NSStackView {
 
     private func setUnavailable() {
         progressIndicator.doubleValue = 0
+        progressIndicator.markerFraction = nil
+        progressIndicator.toolTip = nil
+        progressIndicator.setAccessibilityHelp(nil)
         percentLabel.stringValue = "--"
         progressIndicator.setAccessibilityElement(false)
         setAccessibilityElement(true)
@@ -438,6 +451,36 @@ private final class QuotaProgressRowView: NSStackView {
 private final class QuotaProgressTrack: NSView {
     var doubleValue: Double = 0 { didSet { needsDisplay = true } }
     var fillColor: NSColor = .controlAccentColor
+    private let marker = NSBox()
+    var markerFraction: Double? {
+        didSet {
+            marker.isHidden = markerFraction == nil
+            if markerFraction != oldValue { needsLayout = true }
+        }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        marker.boxType = .custom
+        marker.borderWidth = 0
+        marker.fillColor = .secondaryLabelColor
+        marker.cornerRadius = 0.5
+        marker.identifier = NSUserInterfaceItemIdentifier("exhaustion-marker")
+        marker.isHidden = true
+        marker.setAccessibilityElement(false)
+        addSubview(marker)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layout() {
+        super.layout()
+        guard let markerFraction else { return }
+        let width: CGFloat = 2
+        let x = min(max(0, bounds.width * markerFraction - width / 2), max(0, bounds.width - width))
+        marker.frame = NSRect(x: x, y: 0, width: width, height: bounds.height)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let track = NSRect(x: 0, y: (bounds.height - 5) / 2, width: bounds.width, height: 5)

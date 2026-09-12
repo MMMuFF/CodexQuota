@@ -17,4 +17,5 @@ swiftc \
   "${project_dir}"/Tests/CodexQuotaCoreTests/*.swift \
   -o "${test_binary}"
 
-"${test_binary}"
+"${test_binary}" -AppleLanguages '(zh-Hans)'
+"${test_binary}" --english -AppleLanguages '(en)'

@@ -69,23 +69,23 @@ public final class QuotaService: QuotaServicing {
                     nearestExpiration = fallback.nearestExpiresAt
                     if nearestExpiration == nil {
                         if availableCount == nil {
-                            warnings.append("重置券详情暂不可用")
+                            warnings.append(L("重置券详情暂不可用", "Credit details unavailable"))
                         } else if (availableCount ?? 0) > 0 {
-                            warnings.append("重置券到期时间暂不可用")
+                            warnings.append(L("重置券到期时间暂不可用", "Credit expiry unavailable"))
                         }
                     }
                 } catch {
                     warnings.append(
                         availableCount == nil
-                            ? "重置券详情暂不可用"
-                            : "重置券到期时间暂不可用"
+                            ? L("重置券详情暂不可用", "Credit details unavailable")
+                            : L("重置券到期时间暂不可用", "Credit expiry unavailable")
                     )
                 }
             } else {
                 warnings.append(
                     availableCount == nil
-                        ? "重置券详情暂不可用"
-                        : "重置券到期时间暂不可用"
+                        ? L("重置券详情暂不可用", "Credit details unavailable")
+                        : L("重置券到期时间暂不可用", "Credit expiry unavailable")
                 )
             }
         }
@@ -106,7 +106,7 @@ public final class QuotaService: QuotaServicing {
         )
         if subscription.activeUntil == nil,
            subscription.planType?.lowercased() == "pro" {
-            warnings.append("未读取到会员到期时间")
+            warnings.append(L("未读取到会员到期时间", "Membership expiry unavailable"))
         }
 
         return QuotaStatus(
@@ -386,7 +386,7 @@ struct AppServerOutput {
         if let error = JSONValue.dictionary(envelope["error"]) {
             let code = JSONValue.int(error["code"])
             let suffix = code.map { "（\($0)）" } ?? ""
-            throw QuotaServiceError.appServerRequestFailed("请求被拒绝\(suffix)")
+            throw QuotaServiceError.appServerRequestFailed(L("请求被拒绝\(suffix)", "Request rejected\(suffix)"))
         }
         guard let result = envelope["result"] else {
             throw QuotaServiceError.malformedAppServerResponse

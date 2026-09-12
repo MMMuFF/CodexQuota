@@ -42,6 +42,10 @@ cp -f "${project_dir}/.build/release/CodexQuota" "${macos_dir}/CodexQuota"
 cp -f "${project_dir}/Resources/Info.plist" "${contents_dir}/Info.plist"
 cp -f "${project_dir}/Resources/AppIcon.icns" "${resources_dir}/AppIcon.icns"
 cp -f "${project_dir}/Resources/Assets.car" "${resources_dir}/Assets.car"
+for language in en zh-Hans zh-Hant; do
+    mkdir -p "${resources_dir}/${language}.lproj"
+    cp -f "${project_dir}/Resources/${language}.lproj/InfoPlist.strings" "${resources_dir}/${language}.lproj/InfoPlist.strings"
+done
 
 /usr/bin/xattr -cr "${app_dir}"
 /usr/bin/codesign --force --deep --sign "${signing_identity}" "${app_dir}"

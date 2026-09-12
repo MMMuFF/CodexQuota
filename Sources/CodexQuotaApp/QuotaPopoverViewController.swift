@@ -10,34 +10,34 @@ final class QuotaPopoverViewController: NSViewController {
     var onAutomaticResetChanged: ((Bool) -> Void)?
 
     private let summaryLabel = NSTextField(labelWithString: "--")
-    private let resetDateLabel = NSTextField(labelWithString: "重置时间读取中")
-    private let resetCountdownLabel = NSTextField(labelWithString: "--天后重置")
-    private let subscriptionCaption = NSTextField(labelWithString: "会员到期")
-    private let creditCaption = NSTextField(labelWithString: "重置券")
+    private let resetDateLabel = NSTextField(labelWithString: L("重置时间读取中", "Loading reset time"))
+    private let resetCountdownLabel = NSTextField(labelWithString: L("--天后重置", "Reset in --d"))
+    private let subscriptionCaption = NSTextField(labelWithString: L("会员到期", "Membership expires"))
+    private let creditCaption = NSTextField(labelWithString: L("重置券", "Reset credits"))
     private let timeProgressRow = QuotaProgressRowView(
-        title: "时间已过",
-        accessibilityLabel: "时间已过"
+        title: L("时间已过", "Elapsed"),
+        accessibilityLabel: L("时间已过", "Elapsed")
     )
     private let quotaProgressRow = QuotaProgressRowView(
-        title: "额度已用",
-        accessibilityLabel: "额度已用"
+        title: L("额度已用", "Used"),
+        accessibilityLabel: L("额度已用", "Used")
     )
-    private let forecastLabel = NSTextField(labelWithString: "按周期均速，暂无法估算")
-    private let subscriptionLabel = NSTextField(labelWithString: "会员到期：读取中")
-    private let resetCreditLabel = NSTextField(labelWithString: "最早到期券：读取中")
-    private let freshnessLabel = NSTextField(labelWithString: "正在连接 Codex…")
-    private let publicResetLabel = NSTextField(wrappingLabelWithString: "Tibo 重置：读取中…")
-    private let publicResetLatestLabel = NSTextField(wrappingLabelWithString: "最近公告：读取中…")
+    private let forecastLabel = NSTextField(labelWithString: L("按周期均速，暂无法估算", "Not enough data to estimate"))
+    private let subscriptionLabel = NSTextField(labelWithString: L("会员到期：读取中", "Membership expires: loading"))
+    private let resetCreditLabel = NSTextField(labelWithString: L("最早到期券：读取中", "Earliest credit: loading"))
+    private let freshnessLabel = NSTextField(labelWithString: L("正在连接 Codex…", "Connecting to Codex…"))
+    private let publicResetLabel = NSTextField(wrappingLabelWithString: L("Tibo 重置：读取中…", "Tibo reset: loading…"))
+    private let publicResetLatestLabel = NSTextField(wrappingLabelWithString: L("最近公告：读取中…", "Latest notice: loading…"))
     private let publicResetConfidenceLabel = NSTextField(wrappingLabelWithString: "")
-    private let publicResetInfoLabel = NSTextField(labelWithString: "· 本机时间")
+    private let publicResetInfoLabel = NSTextField(labelWithString: L("· 本机时间", "· Local time"))
     private let publicResetWarningLabel = NSTextField(labelWithString: "")
-    private let publicResetSourceButton = NSButton(title: "查看来源", target: nil, action: nil)
+    private let publicResetSourceButton = NSButton(title: L("查看来源", "View source"), target: nil, action: nil)
     private let automaticResetCheckbox = NSButton(
-        checkboxWithTitle: "临期自动使用重置券", target: nil, action: nil
+        checkboxWithTitle: L("临期自动使用重置券", "Auto-use expiring credits"), target: nil, action: nil
     )
-    private let useButton = NSButton(title: "使用重置券", target: nil, action: nil)
-    private let refreshButton = NSButton(title: "刷新", target: nil, action: nil)
-    private let moreButton = NSButton(title: "更多", target: nil, action: nil)
+    private let useButton = NSButton(title: L("使用重置券", "Use reset credit"), target: nil, action: nil)
+    private let refreshButton = NSButton(title: L("刷新", "Refresh"), target: nil, action: nil)
+    private let moreButton = NSButton(title: L("更多", "More"), target: nil, action: nil)
 
     private var currentStatus: QuotaStatus?
     private var publicResetStatus: PublicResetStatus?
@@ -88,7 +88,7 @@ final class QuotaPopoverViewController: NSViewController {
         }
         publicResetLabel.font = .systemFont(ofSize: 12)
         publicResetLabel.textColor = .labelColor
-        publicResetInfoLabel.toolTip = "本机时区：\(TimeZone.autoupdatingCurrent.identifier)\nCodex Resets · 第三方公告追踪"
+        publicResetInfoLabel.toolTip = L("本机时区：\(TimeZone.autoupdatingCurrent.identifier)\nCodex Resets · 第三方公告追踪", "Local time zone: \(TimeZone.autoupdatingCurrent.identifier)\nCodex Resets · Third-party announcement tracker")
         publicResetInfoLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         publicResetWarningLabel.isHidden = true
         publicResetConfidenceLabel.isHidden = true
@@ -117,14 +117,14 @@ final class QuotaPopoverViewController: NSViewController {
         moreButton.target = self
         moreButton.action = #selector(showMoreMenu)
         let menu = NSMenu()
-        let quitItem = NSMenuItem(title: "退出…", action: #selector(quit), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: L("退出…", "Quit…"), action: #selector(quit), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
         moreButton.menu = menu
         for (button, symbol, help) in [
-            (refreshButton, "arrow.clockwise", "刷新额度与公共公告"),
-            (moreButton, "ellipsis", "更多操作"),
-            (publicResetSourceButton, "arrow.up.right", "查看公告来源")
+            (refreshButton, "arrow.clockwise", L("刷新额度与公共公告", "Refresh quota and public notices")),
+            (moreButton, "ellipsis", L("更多操作", "More actions")),
+            (publicResetSourceButton, "arrow.up.right", L("查看公告来源", "View announcement source"))
         ] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: help)
             button.imagePosition = .imageOnly
@@ -140,9 +140,9 @@ final class QuotaPopoverViewController: NSViewController {
         automaticResetCheckbox.isEnabled = false
         automaticResetCheckbox.target = self
         automaticResetCheckbox.action = #selector(automaticResetChanged)
-        automaticResetCheckbox.toolTip = "仅对此账户生效：最早到期券进入最后 30 分钟时自动尝试使用 1 张。需要应用运行且电脑保持唤醒联网。"
+        automaticResetCheckbox.toolTip = L("仅对此账户生效：最早到期券进入最后 30 分钟时自动尝试使用 1 张。需要应用运行且电脑保持唤醒联网。", "For this account only: try to use one credit during its final 30 minutes. The app must be running and the computer awake and online.")
 
-        let balance = NSTextField(labelWithString: "剩余")
+        let balance = NSTextField(labelWithString: L("剩余", "remaining"))
         balance.font = .systemFont(ofSize: 12)
         balance.textColor = .secondaryLabelColor
         let balanceGroup = NSStackView(views: [summaryLabel, balance])
@@ -153,7 +153,7 @@ final class QuotaPopoverViewController: NSViewController {
         header.heightAnchor.constraint(equalToConstant: 44).isActive = true
 
         let progressSection = verticalStack([quotaProgressRow, timeProgressRow, forecastLabel], spacing: 6)
-        forecastLabel.toolTip = "按本周期平均消耗速度估算，仅供参考。周期初期样本较少，预计时间可能大幅波动。"
+        forecastLabel.toolTip = L("按本周期平均消耗速度估算，仅供参考。周期初期样本较少，预计时间可能大幅波动。", "Estimated from average usage this cycle, not a guarantee. Estimates can vary widely early in the cycle.")
         let detailStack = verticalStack([
             row(subscriptionCaption, subscriptionLabel),
             row(creditCaption, resetCreditLabel),
@@ -222,7 +222,7 @@ final class QuotaPopoverViewController: NSViewController {
         refreshButton.isEnabled = false
         useButton.isEnabled = false
         automaticResetCheckbox.isEnabled = false
-        freshnessLabel.stringValue = previousStatus == nil ? "正在连接 Codex…" : "正在刷新…"
+        freshnessLabel.stringValue = previousStatus == nil ? L("正在连接 Codex…", "Connecting to Codex…") : L("正在刷新…", "Refreshing…")
     }
 
     func update(status: QuotaStatus, timeZone: TimeZone = .autoupdatingCurrent) {
@@ -234,7 +234,7 @@ final class QuotaPopoverViewController: NSViewController {
                 ? nil
                 : status.resetCreditsAvailableCount
         )
-        useButton.title = actionState.isEnabled ? "使用重置券…" : actionState.title
+        useButton.title = actionState.isEnabled ? L("使用重置券…", "Use reset credit…") : actionState.title
         useButton.isEnabled = actionState.isEnabled
         refreshButton.isEnabled = true
         freshnessLabel.stringValue = QuotaDisplayFormatter.freshnessText(for: status)
@@ -244,29 +244,29 @@ final class QuotaPopoverViewController: NSViewController {
         let title = QuotaDisplayFormatter.hoverTitle(for: status, timeZone: timeZone).components(separatedBy: " · ")
         summaryLabel.stringValue = title[0]
         summaryLabel.toolTip = QuotaDisplayFormatter.tooltip(for: status, timeZone: timeZone)
-        resetDateLabel.stringValue = title.count > 1 ? title[1] : "重置时间暂不可用"
-        resetCountdownLabel.stringValue = title.count > 2 ? "\(title[2])后重置" : ""
+        resetDateLabel.stringValue = title.count > 1 ? title[1] : L("重置时间暂不可用", "Reset time unavailable")
+        resetCountdownLabel.stringValue = title.count > 2 ? L("\(title[2])后重置", "Reset in \(title[2])") : ""
         let subscription = QuotaDisplayFormatter.subscriptionExpirationText(
             for: status,
             timeZone: timeZone
         )
-        let subscriptionParts = subscription.components(separatedBy: "：")
+        let subscriptionParts = subscription.components(separatedBy: L("：", ": "))
         subscriptionCaption.stringValue = subscriptionParts[0]
-        subscriptionLabel.stringValue = subscriptionParts.dropFirst().joined(separator: "：")
+        subscriptionLabel.stringValue = subscriptionParts.dropFirst().joined(separator: L("：", ": "))
         subscriptionLabel.toolTip = subscription
         let credit = QuotaDisplayFormatter.resetCreditDetailText(
             for: status,
             timeZone: timeZone
         )
-        creditCaption.stringValue = status.resetCreditsAvailableCount.map { "重置券 \($0)张" } ?? "重置券"
+        creditCaption.stringValue = status.resetCreditsAvailableCount.map { L("重置券 \($0)张", "Reset credits (\($0))") } ?? L("重置券", "Reset credits")
         resetCreditLabel.stringValue = status.nearestResetCreditExpiresAt != nil
-            ? "最早 " + credit.components(separatedBy: "：").dropFirst().joined(separator: "：")
-            : (status.resetCreditsAvailableCount == 0 ? "暂无" : "到期时间暂不可用")
+            ? L("最早 ", "Earliest ") + credit.components(separatedBy: L("：", ": ")).dropFirst().joined(separator: L("：", ": "))
+            : (status.resetCreditsAvailableCount == 0 ? L("暂无", "None") : L("到期时间暂不可用", "Expiry unavailable"))
         resetCreditLabel.toolTip = credit
         forecastLabel.stringValue = QuotaDisplayFormatter.exhaustionForecastText(
             for: status,
             timeZone: timeZone
-        ).replacingOccurrences(of: "按周期均速，预计", with: "均速预计")
+        ).replacingOccurrences(of: L("按周期均速，预计", "At this pace, runs out"), with: L("均速预计", "Est. runs out"))
         updateProgress(QuotaCycleProgress.calculate(for: status))
 
     }
@@ -276,17 +276,17 @@ final class QuotaPopoverViewController: NSViewController {
         publicResetStatus = status
         publicResetFailed = failed
         let presentation = status?.presentation(timeZone: timeZone)
-        publicResetLabel.stringValue = presentation?.title ?? (failed ? "Tibo 重置：暂不可用" : "Tibo 重置：读取中…")
-        publicResetLatestLabel.stringValue = presentation?.latest ?? "最近公告：尚未读取"
+        publicResetLabel.stringValue = presentation?.title ?? (failed ? L("Tibo 重置：暂不可用", "Tibo reset: unavailable") : L("Tibo 重置：读取中…", "Tibo reset: loading…"))
+        publicResetLatestLabel.stringValue = presentation?.latest ?? L("最近公告：尚未读取", "Latest notice: not loaded")
         publicResetConfidenceLabel.stringValue = presentation?.confidence ?? ""
         publicResetConfidenceLabel.isHidden = presentation?.confidence == nil
-        let state = failed ? (status == nil ? "公告连接失败" : "刷新失败，显示上次公告") : "第三方公告追踪"
-        publicResetInfoLabel.stringValue = "· 本机时间"
+        let state = failed ? (status == nil ? L("公告连接失败", "Could not load notices") : L("刷新失败，显示上次公告", "Refresh failed; showing cached notice")) : L("第三方公告追踪", "Third-party announcement tracker")
+        publicResetInfoLabel.stringValue = L("· 本机时间", "· Local time")
         publicResetWarningLabel.stringValue = failed ? state : ""
         publicResetWarningLabel.isHidden = !failed
         preferredContentSize.height = (failed ? 370 : 350) + (presentation?.confidence == nil ? 0 : 24)
         for label in [publicResetLabel, publicResetLatestLabel, publicResetConfidenceLabel, publicResetInfoLabel] {
-            label.toolTip = "\(state)\n" + (presentation?.detail ?? "本机时区：\(timeZone.identifier)\nCodex Resets · 第三方公告追踪")
+            label.toolTip = "\(state)\n" + (presentation?.detail ?? L("本机时区：\(timeZone.identifier)\nCodex Resets · 第三方公告追踪", "Local time zone: \(timeZone.identifier)\nCodex Resets · Third-party announcement tracker"))
         }
         publicResetSourceURL = presentation?.sourceURL
         publicResetSourceButton.isEnabled = publicResetSourceURL != nil
@@ -306,17 +306,17 @@ final class QuotaPopoverViewController: NSViewController {
     func showError(hasCachedStatus: Bool) {
         refreshButton.isEnabled = true
         if hasCachedStatus {
-            freshnessLabel.stringValue = "刷新失败，当前显示上次结果"
+            freshnessLabel.stringValue = L("刷新失败，当前显示上次结果", "Refresh failed; showing cached data")
         } else {
             summaryLabel.stringValue = "--"
-            resetCountdownLabel.stringValue = "读取失败"
-            resetDateLabel.stringValue = "重置时间暂不可用"
-            subscriptionLabel.stringValue = "暂不可用"
-            resetCreditLabel.stringValue = "暂不可用"
+            resetCountdownLabel.stringValue = L("读取失败", "Could not load")
+            resetDateLabel.stringValue = L("重置时间暂不可用", "Reset time unavailable")
+            subscriptionLabel.stringValue = L("暂不可用", "Unavailable")
+            resetCreditLabel.stringValue = L("暂不可用", "Unavailable")
             updateProgress(nil)
-            forecastLabel.stringValue = "按周期均速，暂无法估算"
-            freshnessLabel.stringValue = "请确认 Codex 已登录后重试"
-            useButton.title = "重置券暂不可用"
+            forecastLabel.stringValue = L("按周期均速，暂无法估算", "Not enough data to estimate")
+            freshnessLabel.stringValue = L("请确认 Codex 已登录后重试", "Sign in to Codex and try again")
+            useButton.title = L("重置券暂不可用", "Credits unavailable")
             useButton.isEnabled = false
         }
     }
@@ -329,9 +329,9 @@ final class QuotaPopoverViewController: NSViewController {
                 : currentStatus?.resetCreditsAvailableCount
         )
         useButton.isEnabled = !consuming && actionState.isEnabled
-        useButton.title = consuming ? "正在重置…" : (actionState.isEnabled ? "使用重置券…" : actionState.title)
+        useButton.title = consuming ? L("正在重置…", "Resetting…") : (actionState.isEnabled ? L("使用重置券…", "Use reset credit…") : actionState.title)
         refreshButton.isEnabled = !consuming
-        freshnessLabel.stringValue = consuming ? "正在安全使用 1 张重置券…" : freshnessLabel.stringValue
+        freshnessLabel.stringValue = consuming ? L("正在安全使用 1 张重置券…", "Safely using one reset credit…") : freshnessLabel.stringValue
     }
 
     func showActionMessage(_ message: String) {
@@ -343,7 +343,7 @@ final class QuotaPopoverViewController: NSViewController {
             fraction: progress?.timeElapsedFraction,
             percent: progress?.timeElapsedPercent,
             markerFraction: progress?.exhaustionTimeFraction,
-            markerHelp: "竖线为预计用完点 · \(forecastLabel.stringValue)\n按本周期均速估算，仅供参考。"
+            markerHelp: L("竖线为预计用完点 · \(forecastLabel.stringValue)\n按本周期均速估算，仅供参考。", "Marker: \(forecastLabel.stringValue)\nEstimated from average usage this cycle, not a guarantee.")
         )
         quotaProgressRow.update(
             fraction: progress?.quotaUsedFraction,
@@ -387,7 +387,7 @@ private final class QuotaProgressRowView: NSStackView {
         titleLabel.textColor = .secondaryLabelColor
         titleLabel.setAccessibilityElement(false)
 
-        progressIndicator.fillColor = accessibilityLabel == "时间已过" ? .secondaryLabelColor : .controlAccentColor
+        progressIndicator.fillColor = accessibilityLabel == L("时间已过", "Elapsed") ? .secondaryLabelColor : .controlAccentColor
         progressIndicator.doubleValue = 0
         progressIndicator.setAccessibilityElement(false)
         progressIndicator.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -444,7 +444,7 @@ private final class QuotaProgressRowView: NSStackView {
         progressIndicator.setAccessibilityElement(false)
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
-        setAccessibilityLabel("\(progressAccessibilityLabel)：暂不可用")
+        setAccessibilityLabel(L("\(progressAccessibilityLabel)：暂不可用", "\(progressAccessibilityLabel): unavailable"))
     }
 }
 

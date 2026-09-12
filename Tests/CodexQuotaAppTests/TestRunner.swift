@@ -55,6 +55,11 @@ private struct AppTests {
     static func main() async {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
+        if CommandLine.arguments.contains("--english") {
+            do { try englishInterface(); print("English AppKit checks passed") }
+            catch { print("English AppKit check failed: \(error)"); exit(1) }
+            return
+        }
         let checks: [(String, () throws -> Void)] = [
             ("详情卡包含自动使用勾选框", checkbox),
             ("详情卡突出余额且低频操作收进菜单", informationHierarchy),
@@ -67,6 +72,7 @@ private struct AppTests {
             ("公告按时区重排且保留刷新禁用状态", publicResetTimeZone),
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
+            ("短昵称加带文字语音按钮保留日期", shortNicknameChip),
             ("重复悬停刷新不在长短额度文案间闪烁", stableCompactRefresh),
             ("额度和详情卡的鼠标感应区域不反复重建", stableHoverTracking),
             ("新详情卡深浅色布局无裁切", popoverLayout),
@@ -110,6 +116,55 @@ private struct AppTests {
 
     static func settle() async throws {
         for _ in 0..<20 { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    static func englishInterface() throws {
+        func hasChinese(_ text: String) -> Bool {
+            text.unicodeScalars.contains { (0x3400...0x9FFF).contains($0.value) }
+        }
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        try expect(labels.contains { $0.stringValue == "Used" }, "Quota caption is not English")
+        try expect(labels.contains { $0.stringValue == "Elapsed" }, "Time caption is not English")
+        let now = ISO8601DateFormatter().date(from: "2026-09-12T08:00:00Z")!
+        let status = QuotaStatus(remainingPercent: 40, resetsAt: now.addingTimeInterval(4 * 86_400),
+            windowDurationMins: 10080, planType: "pro", subscriptionActiveUntil: now.addingTimeInterval(16 * 86_400),
+            resetCreditsAvailableCount: 3, nearestResetCreditExpiresAt: now.addingTimeInterval(9 * 86_400),
+            fetchedAt: now, warnings: [], accountFingerprint: "demo")
+        controller.update(status: status, timeZone: .gmt)
+        controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: true, timeZone: .gmt)
+        controller.view.setFrameSize(controller.preferredContentSize)
+        controller.view.layoutSubtreeIfNeeded()
+        try expect(labels.contains { $0.stringValue == "Sep 16 08:00" }, "Reset date is not English")
+        try expect(labels.contains { $0.stringValue == "Pro expires" }, "Subscription label failed to split")
+        for item in descendants(of: controller.view) where !item.isHidden {
+            if let label = item as? NSTextField {
+                try expect(!hasChinese(label.stringValue), "Untranslated label: \(label.stringValue)")
+                try expect(!hasChinese(label.toolTip ?? ""), "Untranslated tooltip for \(label.stringValue)")
+            }
+            if let button = item as? NSButton {
+                try expect(!hasChinese(button.title), "Untranslated button: \(button.title)")
+            }
+            if item is NSTextField || item is NSButton {
+                try expect(controller.view.bounds.insetBy(dx: -1, dy: -1).contains(item.convert(item.bounds, to: controller.view)), "English control exceeds card")
+            }
+        }
+        controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: false, timeZone: .gmt)
+        controller.view.appearance = NSAppearance(named: .darkAqua)
+        controller.view.setFrameSize(controller.preferredContentSize)
+        controller.view.layoutSubtreeIfNeeded()
+        if let bitmap = controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds) {
+            controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+            let output = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+                .appendingPathComponent("popover-english.png")
+            try bitmap.representation(using: .png, properties: [:])?.write(to: output)
+        }
+        controller.showError(hasCachedStatus: false)
+        try expect(labels.contains { $0.stringValue == "Sign in to Codex and try again" }, "Error state is not English")
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 108, height: 28))
+        chip.update(title: QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt), tooltip: "Quota", usageDeviation: nil)
+        let text = chip.subviews.compactMap { $0 as? NSTextField }.first!.stringValue
+        try expect(text.contains("Sep 16") || text.contains("9/16"), "Compact English chip loses date")
     }
 
     static func publicResetSection() throws {
@@ -540,7 +595,7 @@ private struct AppTests {
         guard let label = chip.subviews.compactMap({ $0 as? NSTextField }).first else {
             throw CheckFailure(message: "未找到额度文字")
         }
-        for (width, expected) in [(108.0, "46%·9/15·5天"), (220.0, title), (44.0, "46%"), (220.0, title)] {
+        for (width, expected) in [(108.0, "46%·9/15·5天"), (90.0, "46%·9/15"), (220.0, title), (44.0, "46%"), (220.0, title)] {
             chip.setFrameSize(NSSize(width: width, height: 28))
             chip.layoutSubtreeIfNeeded()
             try expect(chip.bounds.contains(label.frame), "额度文字超出预留后的面板边界")
@@ -549,6 +604,28 @@ private struct AppTests {
             try expect(label.stringValue == expected,
                        "宽度 \(width)，实际 \(chip.bounds.width)，文字 \(label.stringValue)，期望 \(expected)")
             try expect(chip.accessibilityLabel()?.contains("完整日期与天数") == true, "精简文字丢失完整辅助功能说明")
+        }
+    }
+
+    static func shortNicknameChip() throws {
+        for width: CGFloat in [280, 306, 336, 360] {
+            let sidebar = CGRect(x: 40, y: 0, width: width, height: 800)
+            let account = CGRect(x: 48, y: 754, width: width - 152, height: 32)
+            let voice = CGRect(x: sidebar.maxX - 136, y: 754, width: 92, height: 32)
+            let help = CGRect(x: sidebar.maxX - 40, y: 754, width: 32, height: 32)
+            let metrics = CodexOverlayGeometry.taskSidebarFooterMetrics(sidebarFrame: sidebar,
+                accountControlFrame: account, trailingButtonFrame: help, additionalButtonFrames: [voice],
+                accountVisibleContentFrame: CGRect(x: 64, y: 756, width: 50, height: 28))!
+            let frame = CodexOverlayGeometry.badgeFrame(for: CGRect(x: 40, y: 0, width: 1200, height: 800),
+                trailingControlMinX: metrics.trailingControlMinX, accountContentMaxX: metrics.accountContentMaxX)
+            let chip = QuotaChipView(frame: frame)
+            chip.update(title: "98% · 9月15日 · 3天", tooltip: "Demo", usageDeviation: nil)
+            chip.layoutSubtreeIfNeeded()
+            let label = chip.subviews.compactMap { $0 as? NSTextField }.first!
+            if width >= 306 { try expect(label.stringValue.contains("9/15"), "306 点短昵称仍只显示百分比") }
+            if width >= 336 { try expect(label.stringValue.contains("3天"), "336 点短昵称丢失天数") }
+            try expect((label.cell?.cellSize.width ?? 0) <= label.frame.width, "真实字体超出布局预算")
+            try expect(frame.maxX <= voice.minX - 4, "信息扩展覆盖语音按钮")
         }
     }
 

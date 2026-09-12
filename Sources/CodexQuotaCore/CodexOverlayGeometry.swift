@@ -40,10 +40,12 @@ public enum CodexTaskSidebarDecision: Equatable, Sendable {
 public struct CodexTaskSidebarFooterMetrics: Equatable, Sendable {
     public let centerBottomInset: CGFloat
     public let trailingControlMinX: CGFloat
+    public let accountContentMaxX: CGFloat?
 
-    public init(centerBottomInset: CGFloat, trailingControlMinX: CGFloat) {
+    public init(centerBottomInset: CGFloat, trailingControlMinX: CGFloat, accountContentMaxX: CGFloat? = nil) {
         self.centerBottomInset = centerBottomInset
         self.trailingControlMinX = trailingControlMinX
+        self.accountContentMaxX = accountContentMaxX
     }
 }
 
@@ -215,7 +217,8 @@ public enum CodexOverlayGeometry {
         sidebarFrame: CGRect,
         accountControlFrame: CGRect?,
         trailingButtonFrame: CGRect?,
-        additionalButtonFrames: [CGRect] = []
+        additionalButtonFrames: [CGRect] = [],
+        accountVisibleContentFrame: CGRect? = nil
     ) -> CodexTaskSidebarFooterMetrics? {
         guard let accountControlFrame, let trailingButtonFrame else { return nil }
 
@@ -267,7 +270,11 @@ public enum CodexOverlayGeometry {
             : firstTrailingControlX
         return CodexTaskSidebarFooterMetrics(
             centerBottomInset: sidebarFrame.maxY - footerCenterY,
-            trailingControlMinX: protectedTrailingControlX
+            trailingControlMinX: protectedTrailingControlX,
+            accountContentMaxX: accountVisibleContentFrame.map {
+                accountControlFrame.contains($0) && !$0.isEmpty && !$0.isInfinite
+                    ? $0.maxX : accountControlFrame.maxX
+            }
         )
     }
 
@@ -283,7 +290,8 @@ public enum CodexOverlayGeometry {
         for windowFrame: CGRect,
         sidebarTrailingX: CGFloat? = nil,
         footerCenterBottomInset: CGFloat? = nil,
-        trailingControlMinX: CGFloat? = nil
+        trailingControlMinX: CGFloat? = nil,
+        accountContentMaxX: CGFloat? = nil
     ) -> CGRect {
         let windowMaximumRight = windowFrame.maxX - 16
         let constrainedRight = trailingControlMinX.map {
@@ -291,7 +299,9 @@ public enum CodexOverlayGeometry {
         } ?? sidebarTrailingX.map {
             $0 - sidebarTrailingInset
         }
-        let preferredX = windowFrame.minX + horizontalInset
+        let preferredX = accountContentMaxX.map {
+            max(windowFrame.minX + 64, $0 + trailingControlGap)
+        } ?? windowFrame.minX + horizontalInset
         let x: CGFloat
         let width: CGFloat
         if let constrainedRight {

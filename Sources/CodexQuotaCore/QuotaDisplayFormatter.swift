@@ -13,7 +13,7 @@ public struct ResetCreditActionState: Equatable, Sendable {
 public enum QuotaDisplayFormatter {
     public static func mainTitle(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         let percent = status.remainingPercent.map { "\($0)%" } ?? "--"
         guard let resetsAt = status.resetsAt else {
@@ -30,14 +30,14 @@ public enum QuotaDisplayFormatter {
 
     public static func title(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         mainTitle(for: status, timeZone: timeZone)
     }
 
     public static func hoverTitle(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         let percent = status.remainingPercent.map { "\($0)%" } ?? "--"
         guard let resetsAt = status.resetsAt else {
@@ -54,7 +54,7 @@ public enum QuotaDisplayFormatter {
 
     public static func tooltip(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         var lines = [hoverTitle(for: status, timeZone: timeZone)]
 
@@ -69,7 +69,7 @@ public enum QuotaDisplayFormatter {
 
     public static func resetCreditDetailText(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         if let expiresAt = status.nearestResetCreditExpiresAt {
             let days = remainingCalendarDays(
@@ -113,7 +113,7 @@ public enum QuotaDisplayFormatter {
 
     public static func exhaustionForecastText(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         guard let progress = QuotaCycleProgress.calculate(for: status) else {
             return "按周期均速，暂无法估算"
@@ -142,7 +142,7 @@ public enum QuotaDisplayFormatter {
 
     public static func subscriptionExpirationText(
         for status: QuotaStatus,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> String {
         guard let plan = paidPlanDisplayName(status.planType) else {
             return "会员到期：暂不可用"
@@ -165,7 +165,7 @@ public enum QuotaDisplayFormatter {
     public static func remainingCalendarDays(
         until date: Date,
         from referenceDate: Date,
-        timeZone: TimeZone = TimeZone(identifier: "Asia/Shanghai")!
+        timeZone: TimeZone = .autoupdatingCurrent
     ) -> Int {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone

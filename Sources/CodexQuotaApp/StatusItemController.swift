@@ -9,6 +9,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         "com.mufeng.codexquota.pending-reset-idempotency-key"
 
     private let service: QuotaServicing
+    private let publicResetService: PublicResetServicing?
     private let defaults: UserDefaults
     private let automaticReset: AutomaticResetCreditAutomation
     private let overlayPanel = QuotaOverlayPanel()
@@ -20,6 +21,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var refreshTimer: Timer?
     private var automaticResetTimer: Timer?
     private var refreshTask: Task<Void, Never>?
+    private var publicResetTask: Task<Void, Never>?
+    private var publicResetStatus: PublicResetStatus?
     private var currentStatus: QuotaStatus?
     private var isConsuming = false
     private var isConfirmingReset = false
@@ -39,9 +42,11 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     init(
         service: QuotaServicing = QuotaService(),
         defaults: UserDefaults = .standard,
-        startMonitoring: Bool = true
+        startMonitoring: Bool = true,
+        publicResetService: PublicResetServicing? = nil
     ) {
         self.service = service
+        self.publicResetService = publicResetService ?? (startMonitoring ? PublicResetService() : nil)
         self.defaults = defaults
         self.automaticReset = AutomaticResetCreditAutomation(defaults: defaults)
         super.init()
@@ -60,12 +65,15 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
         configurePopover()
         configureActions()
+        NotificationCenter.default.addObserver(self, selector: #selector(systemTimeZoneChanged),
+            name: .NSSystemTimeZoneDidChange, object: nil)
         if startMonitoring {
             observeWorkspace()
             schedulePlacementUpdates()
             scheduleRefresh()
             updateOverlayPlacement()
             refresh(forceTokenRefresh: true)
+            refreshPublicResets()
         }
     }
 
@@ -74,6 +82,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         refreshTimer?.invalidate()
         automaticResetTimer?.invalidate()
         refreshTask?.cancel()
+        publicResetTask?.cancel()
+        NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
@@ -110,6 +120,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         }
         popoverController.onRefresh = { [weak self] in
             self?.refresh(forceTokenRefresh: true)
+            self?.refreshPublicResets()
         }
         popoverController.onUseResetCredit = { [weak self] in
             self?.confirmAndConsumeResetCredit()
@@ -195,6 +206,8 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     @objc private func workspaceStateChanged(_ notification: Notification) {
         if notification.name == NSWorkspace.didWakeNotification {
             refresh(forceTokenRefresh: true)
+            refreshPublicResets()
+            systemTimeZoneChanged()
         }
         if notification.name == NSWorkspace.didLaunchApplicationNotification,
            let application = notification.userInfo?[
@@ -212,6 +225,12 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
     @objc private func refreshTimerFired() {
         refresh(forceTokenRefresh: false)
+        refreshPublicResets()
+    }
+
+    @objc private func systemTimeZoneChanged() {
+        if let currentStatus { updateChip(with: currentStatus) }
+        popoverController.refreshTimeZone()
     }
 
     @objc private func automaticResetTimerFired() {
@@ -355,9 +374,25 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         }
     }
 
-    private func updateDisplay(with status: QuotaStatus) {
-        let title = QuotaDisplayFormatter.mainTitle(for: status, timeZone: .current)
-        let tooltip = QuotaDisplayFormatter.tooltip(for: status, timeZone: .current)
+    func refreshPublicResets() {
+        guard publicResetTask == nil, let publicResetService else { return }
+        publicResetTask = Task { [weak self] in
+            do {
+                let status = try await publicResetService.fetch()
+                guard !Task.isCancelled, let self else { return }
+                publicResetStatus = status
+                popoverController.updatePublicReset(status, failed: false)
+            } catch {
+                guard !Task.isCancelled, let self else { return }
+                popoverController.updatePublicReset(publicResetStatus, failed: true)
+            }
+            self?.publicResetTask = nil
+        }
+    }
+
+    private func updateChip(with status: QuotaStatus) {
+        let title = QuotaDisplayFormatter.mainTitle(for: status)
+        let tooltip = QuotaDisplayFormatter.tooltip(for: status)
         let deviation = QuotaCycleProgress.calculate(for: status)?.usageDeviation
         standardChipTitle = title
         standardChipTooltip = tooltip
@@ -369,7 +404,11 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
                 usageDeviation: deviation
             )
         }
-        popoverController.update(status: status, timeZone: .current)
+    }
+
+    private func updateDisplay(with status: QuotaStatus) {
+        updateChip(with: status)
+        popoverController.update(status: status)
         popoverController.updateAutomaticReset(
             enabled: automaticReset.isEnabled(for: status.accountFingerprint),
             available: status.accountFingerprint != nil
@@ -406,6 +445,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
 
     private func showPopover() {
         guard overlayPanel.isVisible, !isShowingAccessibilityPrompt else { return }
+        systemTimeZoneChanged()
         cancelScheduledPopoverClose()
         overlayPanel.chipView.setExpanded(true)
 

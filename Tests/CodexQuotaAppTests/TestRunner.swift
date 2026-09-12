@@ -3,6 +3,16 @@ import CodexQuotaCore
 
 private struct CheckFailure: Error { let message: String }
 
+private final class FakePublicResetService: PublicResetServicing {
+    var fetchCount = 0
+    var fails = false
+    func fetch() async throws -> PublicResetStatus {
+        fetchCount += 1
+        if fails { throw PublicResetError.unavailable }
+        return try PublicResetStatus.parse(PublicResetHTTPTests.fixture)
+    }
+}
+
 private final class FakeQuotaService: QuotaServicing {
     var account = "demo-account-a"
     var expiresAt = Date().addingTimeInterval(1_700)
@@ -47,6 +57,11 @@ private struct AppTests {
         NSApp.setActivationPolicy(.prohibited)
         let checks: [(String, () throws -> Void)] = [
             ("详情卡包含自动使用勾选框", checkbox),
+            ("详情卡突出余额且低频操作收进菜单", informationHierarchy),
+            ("详情卡将数值与标题分列且时区只放提示", compactDetails),
+            ("时间条使用中性色以区别额度条", distinctProgressColors),
+            ("详情卡包含独立的公共重置公告", publicResetSection),
+            ("公告按时区重排且保留刷新禁用状态", publicResetTimeZone),
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
             ("新详情卡深浅色布局无裁切", popoverLayout),
@@ -70,12 +85,157 @@ private struct AppTests {
             failures += 1
             print("✗ 自动兑换接入刷新：\(error)")
         }
+        do {
+            try await PublicResetHTTPTests.run()
+            print("✓ 公告 HTTP 隔离凭据、缓存及限流")
+        } catch {
+            failures += 1
+            print("✗ 公告 HTTP：\(error)")
+        }
+        do {
+            try await independentPublicRefresh()
+            print("✓ 公告刷新独立于账户且时区变化不触发请求或用券")
+        } catch {
+            failures += 1
+            print("✗ 独立公告刷新：\(error)")
+        }
         if failures > 0 { exit(1) }
-        print("全部 \(checks.count + 1) 项 AppKit 检查通过")
+        print("全部 \(checks.count + 3) 项 AppKit 检查通过")
     }
 
     static func settle() async throws {
         for _ in 0..<20 { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    static func publicResetSection() throws {
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        try expect(labels.contains { $0.stringValue == "Tibo 重置：读取中…" }, "缺少独立公告行")
+        try expect(labels.contains { ($0.toolTip ?? "").contains("本机时区") }, "未说明公告使用电脑时区")
+        controller.showError(hasCachedStatus: false)
+        try expect(labels.contains { $0.stringValue == "Tibo 重置：读取中…" }, "个人额度失败误改公共公告")
+    }
+
+    static func informationHierarchy() throws {
+        let controller = QuotaPopoverViewController()
+        let views = descendants(of: controller.view)
+        let labels = views.compactMap { $0 as? NSTextField }
+        let buttons = views.compactMap { $0 as? NSButton }
+        try expect(labels.contains { $0.stringValue == "剩余" }, "没有独立的余额主标题")
+        try expect(labels.contains { $0.stringValue == "时间已过" }, "进度标签含义不明确")
+        try expect(views.compactMap { $0 as? NSBox }.filter { $0.boxType == .separator }.count == 3, "没有按内容分成三个区域")
+        try expect(!buttons.contains { $0.title == "退出…" }, "退出仍占用常显位置")
+        guard let more = buttons.first(where: { $0.title == "更多" }),
+              let menu = more.menu, let item = menu.items.first(where: { $0.title == "退出…" }) else {
+            throw CheckFailure(message: "更多菜单未保留退出入口")
+        }
+        var didQuit = false
+        controller.onQuit = { didQuit = true }
+        menu.performActionForItem(at: menu.index(of: item))
+        try expect(didQuit, "退出菜单没有连到原有确认流程")
+    }
+
+    static func compactDetails() throws {
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        let date = ISO8601DateFormatter().date(from: "2026-09-19T08:11:00Z")!
+        controller.update(status: QuotaStatus(remainingPercent: 98, resetsAt: date, windowDurationMins: 10_080,
+            planType: "pro", subscriptionActiveUntil: date.addingTimeInterval(9 * 86_400),
+            resetCreditsAvailableCount: 3, nearestResetCreditExpiresAt: date,
+            fetchedAt: date.addingTimeInterval(-7 * 86_400), warnings: [], accountFingerprint: "demo"),
+            timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+        controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: false)
+        try expect(labels.contains { $0.stringValue == "98%" }, "余额没有独立展示")
+        try expect(labels.contains { $0.stringValue == "7天后重置" }, "重置倒计时没有独立展示")
+        try expect(labels.contains { $0.stringValue == "9月19日 16:11" }, "完整重置时间丢失")
+        try expect(labels.contains { $0.stringValue == "重置券 3张" }, "重置券数量未放入权益行")
+        try expect(!labels.contains { $0.stringValue.contains("Asia/") }, "技术时区名称仍占用界面")
+        try expect(labels.contains { ($0.toolTip ?? "").contains("Asia/") }, "收起时区后无法查阅")
+    }
+
+    static func distinctProgressColors() throws {
+        let controller = QuotaPopoverViewController()
+        controller.view.appearance = NSAppearance(named: .aqua)
+        let date = Date()
+        controller.update(status: QuotaStatus(remainingPercent: 40, resetsAt: date.addingTimeInterval(86_400),
+            windowDurationMins: 2880, planType: "pro", subscriptionActiveUntil: nil,
+            resetCreditsAvailableCount: 0, nearestResetCreditExpiresAt: nil, fetchedAt: date, warnings: []))
+        controller.view.setFrameSize(controller.preferredContentSize)
+        controller.view.layoutSubtreeIfNeeded()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        func saturatedPixels(_ title: String) throws -> Int {
+            guard let row = labels.first(where: { $0.stringValue == title })?.superview,
+                  let bitmap = row.bitmapImageRepForCachingDisplay(in: row.bounds) else {
+                throw CheckFailure(message: "无法渲染进度行")
+            }
+            row.cacheDisplay(in: row.bounds, to: bitmap)
+            var count = 0
+            for y in 0..<bitmap.pixelsHigh { for x in 0..<bitmap.pixelsWide {
+                if let c = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                   max(c.redComponent, c.greenComponent, c.blueComponent) - min(c.redComponent, c.greenComponent, c.blueComponent) > 0.2 { count += 1 }
+            } }
+            return count
+        }
+        try expect(try saturatedPixels("时间已过") < 5, "时间条仍与额度条使用同一强调色")
+        try expect(try saturatedPixels("额度已用") > 20, "额度条失去强调色")
+        try expect(descendants(of: controller.view).contains {
+            $0.accessibilityLabel() == "时间已过" && $0.accessibilityRole() == .progressIndicator
+        }, "时间条失去辅助功能进度语义")
+    }
+
+    static func publicResetTimeZone() throws {
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        let buttons = descendants(of: controller.view).compactMap { $0 as? NSButton }
+        let raw = String(decoding: PublicResetHTTPTests.fixture, as: UTF8.self)
+            .replacingOccurrences(of: "\"latest_reset\":null", with: """
+            "latest_reset":{"reset_type":"regular","announced_at":"2026-09-12T01:30:00Z","text":"Demo announcement","source":{"type":"x_post","author":"thsottiaux","url":"https://x.com/thsottiaux/status/123"}}
+            """)
+        let status = try PublicResetStatus.parse(Data(raw.utf8))
+        let date = ISO8601DateFormatter().date(from: "2026-09-12T01:30:00Z")!
+        let account = QuotaStatus(remainingPercent: 50, resetsAt: date, windowDurationMins: 10_080,
+            planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 1,
+            nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-3600),
+            warnings: [], accountFingerprint: "demo-account")
+        controller.update(status: account)
+        controller.showLoading(previousStatus: account)
+        controller.updatePublicReset(status, failed: false, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
+        try expect(labels.contains { $0.stringValue == "最近重置公告：9月12日 09:30" }, "上海公告时间错误")
+        controller.refreshTimeZone(TimeZone(identifier: "America/Los_Angeles")!)
+        try expect(labels.contains { $0.stringValue == "最近重置公告：9月11日 18:30" }, "时区变化未重排公告")
+        try expect(labels.contains { ($0.toolTip ?? "").contains("America/Los_Angeles") }, "缺少本机时区说明")
+        try expect(buttons.first { $0.title == "刷新" }?.isEnabled == false, "时区变化重新启用了刷新按钮")
+        try expect(buttons.first { $0.title.hasPrefix("使用重置券") }?.isEnabled == false, "公告刷新启用了用券按钮")
+        try expect(labels.contains { $0.stringValue == "9月11日 18:30" }, "个人额度未随时区变化")
+        controller.updatePublicReset(status, failed: true)
+        try expect(labels.contains { $0.stringValue.contains("显示上次公告") }, "缓存公告未标注过时")
+        try expect(labels.contains { $0.stringValue.contains("最近重置公告：") }, "网络失败丢失上次公告")
+        controller.updatePublicReset(nil, failed: true)
+        try expect(labels.contains { $0.stringValue == "Tibo 重置：暂不可用" }, "失败误显示暂无预告")
+        try expect(labels.contains { ($0.toolTip ?? "").contains(TimeZone.autoupdatingCurrent.identifier) }, "公告不可用时丢失本机时区提示")
+    }
+
+    static func independentPublicRefresh() async throws {
+        let suite = "CodexQuotaAppTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let account = FakeQuotaService()
+        let announcements = FakePublicResetService()
+        let controller = QuotaOverlayController(service: account, defaults: defaults,
+            startMonitoring: false, publicResetService: announcements)
+        account.fetchFails = true
+        controller.refresh(forceTokenRefresh: false)
+        controller.refreshPublicResets()
+        try await settle()
+        try expect(announcements.fetchCount == 1 && account.fetchCount == 1, "账户失败阻塞公告")
+        announcements.fails = true
+        controller.refreshPublicResets()
+        try await settle()
+        try expect(announcements.fetchCount == 2 && account.fetchCount == 1, "公告请求触发账户刷新")
+        NotificationCenter.default.post(name: .NSSystemTimeZoneDidChange, object: nil)
+        try await settle()
+        try expect(announcements.fetchCount == 2 && account.fetchCount == 1 && account.consumeRequests.isEmpty,
+                   "时区变化触发网络请求或用券")
     }
 
     static func overlayWindowLevel() throws {
@@ -253,6 +413,8 @@ private struct AppTests {
             let controller = QuotaPopoverViewController()
             controller.view.appearance = NSAppearance(named: appearance)
             controller.update(status: status)
+            controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: false,
+                timeZone: TimeZone(identifier: "America/Argentina/Buenos_Aires")!)
             controller.updateAutomaticReset(enabled: true, available: true)
             controller.view.setFrameSize(controller.preferredContentSize)
             controller.view.layoutSubtreeIfNeeded()

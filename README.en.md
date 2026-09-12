@@ -12,7 +12,7 @@ Hover over the quota to see cycle progress, estimated exhaustion, membership exp
 
 ![English details card with synthetic data](docs/images/codex-quota-popover-en.png)
 
-Screenshots use synthetic data. The bilingual interface and short-name layout improvements described here are available in the current source; the previously published v0.8.3 ZIP does not include them yet.
+Screenshots use synthetic data. v0.8.4 adds the bilingual interface and short-name layout improvements. See the [release notes](docs/releases/v0.8.4.md).
 
 > [!IMPORTANT]
 > Release ZIPs and local builds without `CODE_SIGN_IDENTITY` use ad-hoc signing and are not notarized with a Developer ID. Download only from this repository or review and build the source. Replacing or rebuilding the app may require granting Accessibility permission again.

@@ -3,6 +3,7 @@ import Foundation
 public struct PublicResetPresentation: Sendable {
     public let title: String
     public let latest: String
+    public let confidence: String?
     public let detail: String
     public let sourceURL: URL?
 }
@@ -22,6 +23,7 @@ public struct PublicResetStatus: Decodable, Sendable {
     }
 
     struct Watch: Decodable, Sendable {
+        let level: String?
         let resetChancePercent: Int?
         let forecastWindow: String
         let observedAt: Date
@@ -103,6 +105,7 @@ public struct PublicResetStatus: Decodable, Sendable {
 
     public func presentation(now: Date = Date(), timeZone: TimeZone = .autoupdatingCurrent) -> PublicResetPresentation {
         let title: String
+        var confidence: String?
         var sourceURL: URL?
         var detail = "本机时区：\(timeZone.identifier)\nCodex Resets · 第三方公告追踪"
         if let scheduled = data.scheduledReset {
@@ -110,13 +113,24 @@ public struct PublicResetStatus: Decodable, Sendable {
             let action = scheduled.resetType == .banked ? "发券" : "重置"
             if let date = scheduled.scheduledFor {
                 title = "\(subject) \(action)：\(date <= now ? "待确认" : "预计") \(Self.dateText(date, timeZone: timeZone))"
+                confidence = date <= now ? "预告时间已过 · 待确认" : "已预告 · 待执行"
             } else {
                 title = "\(subject) \(action)：已预告，时间待定"
+                confidence = "已预告 · 待执行"
             }
             sourceURL = scheduled.source.safeURL
             detail += "\n公告发布：\(Self.dateText(scheduled.announcedAt, timeZone: timeZone))\n\(Self.clean(scheduled.text))"
+            detail += "\n明确预告不等于已执行；预告时间已过也不自动确认完成。"
         } else if let watch = data.activeWatch, watch.expiresAt > now {
-            title = "重置预测（非官方）：" + (watch.resetChancePercent.map { "\($0)%" } ?? "有动向")
+            title = "重置预测（非官方）：" + (watch.resetChancePercent.map { "\($0)%" } ?? "概率未提供")
+            let strength: String
+            switch watch.level {
+            case "strong": strength = "信号较强"
+            case "elevated": strength = "信号增强"
+            default: strength = "强度未知"
+            }
+            confidence = "\(strength) · 非执行保证"
+            detail += "\n第三方 AI 预测，不是 Tibo 或 OpenAI 的承诺；接口未提供历史命中率，百分比不代表已验证准确率。"
             sourceURL = watch.source.safeURL
             // A free-text forecast window has no machine-readable timezone. Do not turn
             // its expiry into an ETA or silently reinterpret the source's wording.
@@ -133,11 +147,16 @@ public struct PublicResetStatus: Decodable, Sendable {
                 sourceURL = reset.source.safeURL
             }
             detail += "\n\(latest)\n\(Self.clean(reset.text))"
+            if confidence == nil {
+                confidence = reset.source.type == .observed
+                    ? "第三方观测 · 非官方确认" : "已发布公告 · 非个人到账确认"
+            }
         } else {
             latest = "最近公告：暂无记录"
         }
         detail += "\n数据生成：\(Self.dateText(meta.generatedAt, timeZone: timeZone))"
-        return PublicResetPresentation(title: title, latest: latest,
+        if let confidence { detail += "\n\(confidence)" }
+        return PublicResetPresentation(title: title, latest: latest, confidence: confidence,
             detail: detail, sourceURL: sourceURL)
     }
 

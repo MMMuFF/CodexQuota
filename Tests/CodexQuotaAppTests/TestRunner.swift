@@ -60,7 +60,10 @@ private struct AppTests {
             ("详情卡突出余额且低频操作收进菜单", informationHierarchy),
             ("详情卡将数值与标题分列且时区只放提示", compactDetails),
             ("时间条使用中性色以区别额度条", distinctProgressColors),
+            ("额度条在上且时间条紧邻耗尽预测", progressOrder),
+            ("耗尽竖线映射周期位置且不伪造提前耗尽", exhaustionMarker),
             ("详情卡包含独立的公共重置公告", publicResetSection),
+            ("重置信号风险说明可见且刷新失败仍保留", publicResetConfidence),
             ("公告按时区重排且保留刷新禁用状态", publicResetTimeZone),
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
@@ -118,6 +121,49 @@ private struct AppTests {
         try expect(labels.contains { $0.stringValue == "Tibo 重置：读取中…" }, "个人额度失败误改公共公告")
     }
 
+    static func publicResetConfidence() throws {
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        let data = Data("""
+        {"data":{"latest_reset":null,"scheduled_reset":null,"active_watch":{
+        "level":"strong","reset_chance_percent":80,"forecast_window":"soon",
+        "observed_at":"2026-09-12T00:00:00Z","expires_at":"2099-09-12T10:00:00Z","text":"Possible reset",
+        "source":{"type":"x_post","author":"thsottiaux","url":"https://x.com/thsottiaux/status/124"}}},
+        "meta":{"api_version":"v1","generated_at":"2026-09-12T00:00:00Z"}}
+        """.utf8)
+        let status = try PublicResetStatus.parse(data)
+        let now = ISO8601DateFormatter().date(from: "2026-09-12T08:00:00Z")!
+        controller.update(status: QuotaStatus(remainingPercent: 40,
+            resetsAt: now.addingTimeInterval(4 * 86_400), windowDurationMins: 10_080,
+            planType: "pro", subscriptionActiveUntil: now.addingTimeInterval(16 * 86_400),
+            resetCreditsAvailableCount: 3, nearestResetCreditExpiresAt: now.addingTimeInterval(9 * 86_400),
+            fetchedAt: now, warnings: []))
+        for failed in [false, true] {
+            controller.updatePublicReset(status, failed: failed)
+            try expect(labels.contains { !$0.isHidden && $0.stringValue == "信号较强 · 非执行保证" }, "界面没有显示预测风险说明")
+            try expect(labels.contains { $0.stringValue == "重置预测（非官方）：80%" }, "丢失预测概率")
+            controller.view.setFrameSize(controller.preferredContentSize)
+            controller.view.layoutSubtreeIfNeeded()
+            for label in labels where !label.isHidden {
+                try expect(controller.view.bounds.contains(label.convert(label.bounds, to: controller.view)), "风险说明挤出卡片")
+            }
+            if !failed {
+                for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
+                    controller.view.appearance = NSAppearance(named: appearance)
+                    guard let bitmap = controller.view.bitmapImageRepForCachingDisplay(in: controller.view.bounds) else {
+                        throw CheckFailure(message: "无法渲染预测风险说明")
+                    }
+                    controller.view.cacheDisplay(in: controller.view.bounds, to: bitmap)
+                    let output = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+                        .appendingPathComponent("reset-confidence-\(name).png")
+                    try bitmap.representation(using: .png, properties: [:])?.write(to: output)
+                }
+            }
+        }
+        controller.updatePublicReset(nil, failed: true)
+        try expect(!labels.contains { !$0.isHidden && $0.stringValue.contains("信号较强") }, "无公告时保留旧的强信号说明")
+    }
+
     static func informationHierarchy() throws {
         let controller = QuotaPopoverViewController()
         let views = descendants(of: controller.view)
@@ -153,6 +199,56 @@ private struct AppTests {
         try expect(labels.contains { $0.stringValue == "重置券 3张" }, "重置券数量未放入权益行")
         try expect(!labels.contains { $0.stringValue.contains("Asia/") }, "技术时区名称仍占用界面")
         try expect(labels.contains { ($0.toolTip ?? "").contains("Asia/") }, "收起时区后无法查阅")
+    }
+
+    static func progressOrder() throws {
+        let controller = QuotaPopoverViewController()
+        let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
+        guard let quota = labels.first(where: { $0.stringValue == "额度已用" })?.superview,
+              let time = labels.first(where: { $0.stringValue == "时间已过" })?.superview,
+              let stack = quota.superview as? NSStackView else {
+            throw CheckFailure(message: "未找到进度区域")
+        }
+        try expect(stack.arrangedSubviews.first === quota, "额度条没有放在最上方")
+        try expect(stack.arrangedSubviews[1] === time, "时间条没有放在预测文案上方")
+        try expect(stack.arrangedSubviews[2] is NSTextField, "时间条下方不是预测文案")
+    }
+
+    static func exhaustionMarker() throws {
+        let controller = QuotaPopoverViewController()
+        let root = controller.view
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        func update(elapsed: Double, remaining: Int) {
+            controller.update(status: QuotaStatus(remainingPercent: remaining,
+                resetsAt: start.addingTimeInterval(604_800), windowDurationMins: 10_080,
+                planType: "pro", subscriptionActiveUntil: nil, resetCreditsAvailableCount: 0,
+                nearestResetCreditExpiresAt: nil, fetchedAt: start.addingTimeInterval(604_800 * elapsed), warnings: []))
+            root.setFrameSize(controller.preferredContentSize)
+            root.layoutSubtreeIfNeeded()
+        }
+        update(elapsed: 0.2, remaining: 50)
+        let markers = descendants(of: root).filter { $0.identifier?.rawValue == "exhaustion-marker" && !$0.isHidden }
+        try expect(markers.count == 1, "时间条没有唯一的耗尽竖线")
+        guard let marker = markers.first, let track = marker.superview else { return }
+        let labels = descendants(of: root).compactMap { $0 as? NSTextField }
+        try expect(track.superview === labels.first(where: { $0.stringValue == "时间已过" })?.superview,
+            "耗尽标记不在时间条上")
+        try expect(abs(marker.frame.midX / track.bounds.width - 0.4) < 0.01, "时间已过 20%、额度已用 50% 应标在周期 40%")
+        try expect(marker.frame.height > 5 && marker.frame.width <= 2, "不是高于轨道的小竖线")
+        try expect((track.toolTip ?? "").contains("均速预计"), "竖线缺少预计用完时间说明")
+        for (elapsed, remaining, fraction) in [(0.5, 50, 1.0), (0.5, 0, 0.5), (0.02, 95, 0.4)] {
+            update(elapsed: elapsed, remaining: remaining)
+            try expect(!marker.isHidden && abs(marker.frame.midX / track.bounds.width - fraction) < 0.01,
+                "竖线位置与耗尽预测不一致")
+            try expect(track.bounds.contains(marker.frame), "端点竖线超出轨道边界")
+        }
+        for (elapsed, remaining) in [(0.5, 80), (0.5, 100), (0.0, 95)] {
+            update(elapsed: elapsed, remaining: remaining)
+            try expect(marker.isHidden, "无周期内耗尽预测时仍显示竖线")
+        }
+        update(elapsed: 0.2, remaining: 50)
+        controller.showError(hasCachedStatus: false)
+        try expect(marker.isHidden, "数据不可用时保留了旧竖线")
     }
 
     static func distinctProgressColors() throws {

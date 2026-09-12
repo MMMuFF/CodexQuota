@@ -33,6 +33,12 @@ public struct QuotaCycleProgress: Equatable, Sendable {
     public let quotaUsedFraction: Double
     public let exhaustionForecast: QuotaExhaustionForecast
 
+    public var exhaustionTimeFraction: Double? {
+        guard case .estimated = exhaustionForecast,
+              timeElapsedFraction > 0, quotaUsedFraction > 0 else { return nil }
+        return Self.clamp(timeElapsedFraction / quotaUsedFraction)
+    }
+
     public var timeElapsedPercent: Int {
         Int((timeElapsedFraction * 100).rounded())
     }

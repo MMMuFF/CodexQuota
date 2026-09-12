@@ -97,6 +97,37 @@ enum PublicResetTests {
         try check(mixed.presentation().sourceURL == nil, "预告来源无效却打开了旧公告")
     }
 
+    static func confidenceSemantics() throws {
+        let now = ISO8601DateFormatter().date(from: "2026-09-12T00:30:00Z")!
+        let watch = """
+        {"level":"strong","reset_chance_percent":80,"forecast_window":"soon",
+        "observed_at":"2026-09-12T00:00:00Z","expires_at":"2026-09-12T10:00:00Z","text":"Possible reset",
+        "source":{"type":"x_post","author":"thsottiaux","url":"https://x.com/thsottiaux/status/124"}}
+        """
+        func present(_ raw: String) throws -> PublicResetPresentation {
+            try PublicResetStatus.parse(fixture(watch: raw)).presentation(now: now)
+        }
+        let strong = try present(watch)
+        try check(strong.detail.contains("信号较强") && strong.detail.contains("非执行保证"), "预测缺少信号强度与风险提示")
+        try check(strong.detail.contains("未提供历史命中率"), "预测概率被当作已验证准确率")
+        let elevated = try present(watch.replacingOccurrences(of: "strong", with: "elevated"))
+        try check(elevated.detail.contains("信号增强"), "增强信号误当强信号")
+        let unknown = try present(watch.replacingOccurrences(of: "strong", with: "future_level"))
+        try check(unknown.detail.contains("强度未知") && !unknown.detail.contains("信号较强"), "未知级别误报强信号")
+        let noChance = try present(watch.replacingOccurrences(of: "\"reset_chance_percent\":80", with: "\"reset_chance_percent\":null"))
+        try check(noChance.title.contains("概率未提供") && !noChance.title.contains("%"), "缺少概率时伪造百分比")
+        let announced = try PublicResetStatus.parse(fixture(scheduled: scheduled, watch: watch)).presentation(now: now)
+        try check(announced.detail.contains("已预告 · 待执行") && !announced.title.contains("80%"), "预告误用预测概率或未区分执行状态")
+        let late = try PublicResetStatus.parse(fixture(scheduled: scheduled)).presentation(now: now.addingTimeInterval(7200))
+        try check(late.detail.contains("预告时间已过 · 待确认"), "到点自动当作完成")
+        let history = scheduled.replacingOccurrences(of: "\"status\":\"scheduled\",", with: "")
+        let past = try PublicResetStatus.parse(fixture(latest: history)).presentation(now: now)
+        try check(past.detail.contains("已发布公告 · 非个人到账确认"), "历史公告未区别个人到账")
+        let observed = history.replacingOccurrences(of: "\"type\":\"x_post\"", with: "\"type\":\"observed\"")
+        let observation = try PublicResetStatus.parse(fixture(latest: observed)).presentation(now: now)
+        try check(observation.detail.contains("第三方观测 · 非官方确认"), "观测被当作官方公告")
+    }
+
     static func accountTimeZoneDefaults() throws {
         let date = ISO8601DateFormatter().date(from: "2026-09-12T01:30:00Z")!
         let status = QuotaStatus(remainingPercent: 50, resetsAt: date, windowDurationMins: 10_080,

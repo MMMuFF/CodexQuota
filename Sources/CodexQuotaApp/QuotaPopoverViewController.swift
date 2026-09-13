@@ -153,7 +153,7 @@ final class QuotaPopoverViewController: NSViewController {
         header.heightAnchor.constraint(equalToConstant: 44).isActive = true
 
         let progressSection = verticalStack([quotaProgressRow, timeProgressRow, forecastLabel], spacing: 6)
-        forecastLabel.toolTip = L("按本周期平均消耗速度估算，仅供参考。周期初期样本较少，预计时间可能大幅波动。", "Estimated from average usage this cycle, not a guarantee. Estimates can vary widely early in the cycle.")
+        forecastLabel.toolTip = L("时间已过或额度已用任一达到 15% 后，才按本周期均速估算。数据须可计算，结果仅供参考。", "Forecasts start when either elapsed time or used quota reaches 15%, provided the data supports an estimate. Based on average usage this cycle, not a guarantee.")
         let detailStack = verticalStack([
             row(subscriptionCaption, subscriptionLabel),
             row(creditCaption, resetCreditLabel),

@@ -39,6 +39,7 @@ private struct CodexQuotaCoreTestRunner {
                     planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 3,
                     nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-7 * 86400), warnings: [])
                 try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "English date or days missing")
+                try expect(QuotaDisplayFormatter.exhaustionForecastText(for: status) == "Not enough data to forecast yet", "Early-cycle forecast message untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt).hasPrefix("Earliest credit:"), "Credit detail untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditActionState(availableCount: 0).title == "No reset credits", "Empty state untranslated")
                 let publicStatus = try PublicResetStatus.parse(PublicResetTests.fixture(scheduled: PublicResetTests.scheduled))
@@ -90,6 +91,7 @@ private struct CodexQuotaCoreTestRunner {
             ("北京时间中文短文案", chineseDateFormatting),
             ("时间与额度进度使用统一已消耗口径", comparableQuotaProgress),
             ("额度与时间偏差使用严格颜色阈值", quotaUsageDeviationBands),
+            ("周期初期数据不足时不预测耗尽", earlyCycleForecast),
             ("周期均速预测本周期额度耗尽时间", quotaExhaustionForecast),
             ("周期均速预测使用精简中文文案", quotaExhaustionForecastText),
             ("过期付费会员日期标记为暂不可用", staleSubscriptionExpiration),
@@ -1309,6 +1311,41 @@ private struct CodexQuotaCoreTestRunner {
             unusedProgress.exhaustionForecast == .unavailable,
             "尚未消耗额度时仍生成了耗尽预测"
         )
+    }
+
+    private static func earlyCycleForecast() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let status = QuotaStatus(remainingPercent: 97,
+            resetsAt: start.addingTimeInterval(604_800), windowDurationMins: 10_080,
+            planType: "pro", subscriptionActiveUntil: nil, resetCreditsAvailableCount: nil,
+            nearestResetCreditExpiresAt: nil, fetchedAt: start.addingTimeInterval(6048), warnings: [])
+        let progress = try require(QuotaCycleProgress.calculate(for: status), "进度丢失")
+        try expect(progress.exhaustionTimeFraction == nil, "时间 1%、消耗 3% 仍产生耗尽竖线")
+        try expect(QuotaDisplayFormatter.exhaustionForecastText(for: status) == "数据不足，暂不预测",
+            "周期初期未显示数据不足提示")
+        try expect(progress.timeElapsedPercent == 1 && progress.quotaUsedPercent == 3,
+            "预测门槛不应隐藏真实进度")
+        for (elapsed, remaining, shouldForecast) in [
+            (0.0, 100, false), (0.1499, 86, false),
+            (0.15, 99, true), (0.01, 85, true), (0.15, 85, true),
+            (0.16, 86, true), (0.14, 84, true)
+        ] {
+            let sample = QuotaStatus(remainingPercent: remaining,
+                resetsAt: start.addingTimeInterval(604_800), windowDurationMins: 10_080,
+                planType: "pro", subscriptionActiveUntil: nil, resetCreditsAvailableCount: nil,
+                nearestResetCreditExpiresAt: nil,
+                fetchedAt: start.addingTimeInterval(604_800 * elapsed), warnings: [])
+            let result = try require(QuotaCycleProgress.calculate(for: sample), "边界进度丢失")
+            if shouldForecast {
+                switch result.exhaustionForecast {
+                case .estimated, .afterReset: break
+                default: throw CheckFailure(description: "任一进度达到 15% 后未恢复预测")
+                }
+            } else {
+                try expect(result.exhaustionForecast == .insufficientData && result.exhaustionTimeFraction == nil,
+                    "低于 15%（含四舍五入显示 15%）时仍预测")
+            }
+        }
     }
 
     private static func quotaExhaustionForecastText() throws {

@@ -14,6 +14,8 @@ Hover over the quota to see cycle progress, estimated exhaustion, membership exp
 
 Screenshots use synthetic data. v0.8.4 adds the bilingual interface and short-name layout improvements. See the [release notes](docs/releases/v0.8.4.md).
 
+Upcoming v0.8.5 adds a 15% forecast threshold. See the [update notes](docs/releases/v0.8.5.md). It is included in current source and local builds, but not in the published v0.8.4 ZIP.
+
 > [!IMPORTANT]
 > Release ZIPs and local builds without `CODE_SIGN_IDENTITY` use ad-hoc signing and are not notarized with a Developer ID. Download only from this repository or review and build the source. Replacing or rebuilding the app may require granting Accessibility permission again.
 
@@ -108,7 +110,7 @@ An example compact label is `86% · Aug 4 · 7d`: remaining quota, cycle reset d
 - **Used**: the quota consumed, equal to `100% − remaining`.
 - **Elapsed**: the fraction of the same cycle elapsed at the most recent data refresh.
 - **Vertical marker**: estimated exhaustion at the current average consumption rate. At 20% time elapsed and 50% quota used, the marker is at 40% of the cycle. At exactly reset time it is at the right edge. It is hidden if quota is expected to last beyond reset, there is insufficient data, or the data is unavailable.
-- **Forecast text**: a linear estimate, not a guaranteed exhaustion time. Early-cycle estimates can vary widely.
+- **Forecast text**: shown only once **either elapsed time or used quota reaches 15%**. Below both thresholds, it says “Not enough data to forecast yet” and hides the marker; actual progress remains visible. The threshold uses unrounded progress. Once eligible, it remains a linear estimate, not a guarantee; zero usage or incomplete cycle data can still prevent an estimate.
 
 The underline uses the absolute difference between Used and Elapsed in percentage points:
 

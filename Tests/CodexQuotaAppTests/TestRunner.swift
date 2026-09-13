@@ -294,7 +294,7 @@ private struct AppTests {
         try expect(abs(marker.frame.midX / track.bounds.width - 0.4) < 0.01, "时间已过 20%、额度已用 50% 应标在周期 40%")
         try expect(marker.frame.height > 5 && marker.frame.width <= 2, "不是高于轨道的小竖线")
         try expect((track.toolTip ?? "").contains("均速预计"), "竖线缺少预计用完时间说明")
-        for (elapsed, remaining, fraction) in [(0.5, 50, 1.0), (0.5, 0, 0.5), (0.02, 95, 0.4)] {
+        for (elapsed, remaining, fraction) in [(0.5, 50, 1.0), (0.5, 0, 0.5), (0.01, 85, 1.0 / 15), (0.15, 85, 1.0)] {
             update(elapsed: elapsed, remaining: remaining)
             try expect(!marker.isHidden && abs(marker.frame.midX / track.bounds.width - fraction) < 0.01,
                 "竖线位置与耗尽预测不一致")
@@ -303,6 +303,14 @@ private struct AppTests {
         for (elapsed, remaining) in [(0.5, 80), (0.5, 100), (0.0, 95)] {
             update(elapsed: elapsed, remaining: remaining)
             try expect(marker.isHidden, "无周期内耗尽预测时仍显示竖线")
+        }
+        for (elapsed, remaining) in [(0.01, 97), (0.02, 95), (0.1499, 86)] {
+            update(elapsed: 0.2, remaining: 50)
+            update(elapsed: elapsed, remaining: remaining)
+            try expect(marker.isHidden, "新周期样本不足时保留了旧预测竖线")
+            let hint = labels.first(where: { $0.stringValue == "数据不足，暂不预测" })
+            try expect(hint != nil, "样本不足时没有显示提示")
+            try expect((hint?.toolTip ?? "").contains("15%"), "提示未说明预测门槛")
         }
         update(elapsed: 0.2, remaining: 50)
         controller.showError(hasCachedStatus: false)

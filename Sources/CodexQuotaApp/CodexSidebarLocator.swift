@@ -312,7 +312,7 @@ final class CodexSidebarLocator {
         return .task(metrics: metrics)
     }
 
-    private func accountContentFrame(of control: AXUIElement, within accountFrame: CGRect) -> CGRect {
+    private func accountContentFrame(of control: AXUIElement, within accountFrame: CGRect) -> CGRect? {
         var queue: [(AXUIElement, Int)] = [(control, 0)]
         var cursor = 0
         var content: CGRect?
@@ -322,19 +322,20 @@ final class CodexSidebarLocator {
             cursor += 1
             let role = stringAttribute(element, kAXRoleAttribute as CFString)
             if role == kAXStaticTextRole as String || role == kAXImageRole as String {
-                guard let elementFrame = frame(of: element) else { return accountFrame }
+                // A flexible AX text/control frame includes blank click area, not just the nickname.
                 let visible = role == kAXStaticTextRole as String
-                    ? (textBounds(of: element) ?? elementFrame) : elementFrame
-                guard !visible.isEmpty, accountFrame.contains(visible) else { return accountFrame }
+                    ? textBounds(of: element) : frame(of: element)
+                guard let visible, !visible.isEmpty, !visible.isInfinite,
+                      accountFrame.contains(visible) else { return nil }
                 content = content.map { $0.union(visible) } ?? visible
                 hasText = hasText || role == kAXStaticTextRole as String
             }
             if let children = attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement], !children.isEmpty {
-                guard depth < 6 else { return accountFrame }
+                guard depth < 6 else { return nil }
                 queue.append(contentsOf: children.map { ($0, depth + 1) })
             }
         }
-        guard cursor == queue.count, hasText, let content else { return accountFrame }
+        guard cursor == queue.count, hasText, let content else { return nil }
         return content
     }
 

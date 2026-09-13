@@ -124,6 +124,8 @@ public enum QuotaDisplayFormatter {
             return L("按周期均速，预计 \(monthDayTime(date, timeZone: timeZone)) 用完", "At this pace, runs out \(monthDayTime(date, timeZone: timeZone))")
         case .afterReset:
             return L("按周期均速，本轮预计用不完", "At this pace, lasts until reset")
+        case .insufficientData:
+            return L("数据不足，暂不预测", "Not enough data to forecast yet")
         case .unavailable:
             return L("按周期均速，暂无法估算", "Not enough data to estimate")
         }

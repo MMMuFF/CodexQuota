@@ -3,6 +3,7 @@ import Foundation
 public enum QuotaExhaustionForecast: Equatable, Sendable {
     case estimated(Date)
     case afterReset
+    case insufficientData
     case unavailable
 }
 
@@ -87,6 +88,9 @@ public struct QuotaCycleProgress: Equatable, Sendable {
         timeElapsedFraction: Double,
         quotaUsedFraction: Double
     ) -> QuotaExhaustionForecast {
+        guard timeElapsedFraction >= 0.15 || quotaUsedFraction >= 0.15 else {
+            return .insufficientData
+        }
         guard timeElapsedFraction > 0, quotaUsedFraction > 0 else {
             return .unavailable
         }

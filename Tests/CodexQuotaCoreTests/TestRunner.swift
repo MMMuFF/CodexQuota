@@ -39,6 +39,7 @@ private struct CodexQuotaCoreTestRunner {
                     planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 3,
                     nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-7 * 86400), warnings: [])
                 try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "English date or days missing")
+                try expect(QuotaDisplayFormatter.exhaustionForecastText(for: status) == "Not enough data to forecast yet", "Early-cycle forecast message untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt).hasPrefix("Earliest credit:"), "Credit detail untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditActionState(availableCount: 0).title == "No reset credits", "Empty state untranslated")
                 let publicStatus = try PublicResetStatus.parse(PublicResetTests.fixture(scheduled: PublicResetTests.scheduled))
@@ -90,6 +91,7 @@ private struct CodexQuotaCoreTestRunner {
             ("北京时间中文短文案", chineseDateFormatting),
             ("时间与额度进度使用统一已消耗口径", comparableQuotaProgress),
             ("额度与时间偏差使用严格颜色阈值", quotaUsageDeviationBands),
+            ("周期初期数据不足时不预测耗尽", earlyCycleForecast),
             ("周期均速预测本周期额度耗尽时间", quotaExhaustionForecast),
             ("周期均速预测使用精简中文文案", quotaExhaustionForecastText),
             ("过期付费会员日期标记为暂不可用", staleSubscriptionExpiration),
@@ -106,6 +108,7 @@ private struct CodexQuotaCoreTestRunner {
             ("麦克风漏识别时仍保留按钮位", overlayReservesMissingVoiceButton),
             ("窄侧栏新增按钮不导致底栏识别失效", overlayFooterWithNarrowAccount),
             ("短昵称回收空白且长昵称与语音按钮不被覆盖", overlayAccountContentBounds),
+            ("昵称边界失效不应把宽底栏额度压成零宽", overlayMissingContentBounds),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
             ("仅任务页账户底栏显示组件", overlayTaskSidebarFooter),
@@ -1311,6 +1314,41 @@ private struct CodexQuotaCoreTestRunner {
         )
     }
 
+    private static func earlyCycleForecast() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let status = QuotaStatus(remainingPercent: 97,
+            resetsAt: start.addingTimeInterval(604_800), windowDurationMins: 10_080,
+            planType: "pro", subscriptionActiveUntil: nil, resetCreditsAvailableCount: nil,
+            nearestResetCreditExpiresAt: nil, fetchedAt: start.addingTimeInterval(6048), warnings: [])
+        let progress = try require(QuotaCycleProgress.calculate(for: status), "进度丢失")
+        try expect(progress.exhaustionTimeFraction == nil, "时间 1%、消耗 3% 仍产生耗尽竖线")
+        try expect(QuotaDisplayFormatter.exhaustionForecastText(for: status) == "数据不足，暂不预测",
+            "周期初期未显示数据不足提示")
+        try expect(progress.timeElapsedPercent == 1 && progress.quotaUsedPercent == 3,
+            "预测门槛不应隐藏真实进度")
+        for (elapsed, remaining, shouldForecast) in [
+            (0.0, 100, false), (0.1499, 86, false),
+            (0.15, 99, true), (0.01, 85, true), (0.15, 85, true),
+            (0.16, 86, true), (0.14, 84, true)
+        ] {
+            let sample = QuotaStatus(remainingPercent: remaining,
+                resetsAt: start.addingTimeInterval(604_800), windowDurationMins: 10_080,
+                planType: "pro", subscriptionActiveUntil: nil, resetCreditsAvailableCount: nil,
+                nearestResetCreditExpiresAt: nil,
+                fetchedAt: start.addingTimeInterval(604_800 * elapsed), warnings: [])
+            let result = try require(QuotaCycleProgress.calculate(for: sample), "边界进度丢失")
+            if shouldForecast {
+                switch result.exhaustionForecast {
+                case .estimated, .afterReset: break
+                default: throw CheckFailure(description: "任一进度达到 15% 后未恢复预测")
+                }
+            } else {
+                try expect(result.exhaustionForecast == .insufficientData && result.exhaustionTimeFraction == nil,
+                    "低于 15%（含四舍五入显示 15%）时仍预测")
+            }
+        }
+    }
+
     private static func quotaExhaustionForecastText() throws {
         let fetchedAt = try require(
             ISO8601DateFormatter().date(from: "2026-09-01T00:00:00Z"),
@@ -1729,8 +1767,29 @@ private struct CodexQuotaCoreTestRunner {
                         sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
                         additionalButtonFrames: [voice], accountVisibleContentFrame: CGRect(x: origin - 200, y: 0, width: 20, height: 20)
                     ), "缺少昵称几何不应改变底栏类型")
-                    try expect(fallback.accountContentMaxX == account.maxX, "无效昵称边界未保护账户内容")
+                    try expect(fallback.accountContentMaxX == nil, "无效昵称边界被当成整个账户按钮")
                 }
+            }
+        }
+    }
+
+    private static func overlayMissingContentBounds() throws {
+        for width: CGFloat in [336, 448, 600] {
+            let sidebar = CGRect(x: 40, y: 0, width: width, height: 800)
+            let account = CGRect(x: 48, y: 754, width: width - 60, height: 32)
+            let help = CGRect(x: sidebar.maxX - 40, y: 754, width: 32, height: 32)
+            for invalidContent: CGRect? in [nil, .zero, CGRect(x: -200, y: 0, width: 20, height: 20)] {
+                let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                    sidebarFrame: sidebar, accountControlFrame: account,
+                    trailingButtonFrame: help, accountVisibleContentFrame: invalidContent), "底栏识别失败")
+                let window = CGRect(x: 40, y: 0, width: 1200, height: 800)
+                let badge = CodexOverlayGeometry.badgeFrame(for: window,
+                    trailingControlMinX: metrics.trailingControlMinX,
+                    accountContentMaxX: metrics.accountContentMaxX)
+                let legacy = CodexOverlayGeometry.badgeFrame(for: window,
+                    trailingControlMinX: metrics.trailingControlMinX)
+                try expect(badge == legacy && badge.width >= 100, "昵称测量失败把额度压成零宽")
+                try expect(badge.maxX <= help.minX - 40, "回退占用了右侧语音按钮位")
             }
         }
     }

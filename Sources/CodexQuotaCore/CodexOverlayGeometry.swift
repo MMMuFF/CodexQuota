@@ -271,9 +271,9 @@ public enum CodexOverlayGeometry {
         return CodexTaskSidebarFooterMetrics(
             centerBottomInset: sidebarFrame.maxY - footerCenterY,
             trailingControlMinX: protectedTrailingControlX,
-            accountContentMaxX: accountVisibleContentFrame.map {
+            accountContentMaxX: accountVisibleContentFrame.flatMap {
                 accountControlFrame.contains($0) && !$0.isEmpty && !$0.isInfinite
-                    ? $0.maxX : accountControlFrame.maxX
+                    ? $0.maxX : nil
             }
         )
     }

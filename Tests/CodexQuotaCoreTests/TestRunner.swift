@@ -108,6 +108,7 @@ private struct CodexQuotaCoreTestRunner {
             ("麦克风漏识别时仍保留按钮位", overlayReservesMissingVoiceButton),
             ("窄侧栏新增按钮不导致底栏识别失效", overlayFooterWithNarrowAccount),
             ("短昵称回收空白且长昵称与语音按钮不被覆盖", overlayAccountContentBounds),
+            ("昵称边界失效不应把宽底栏额度压成零宽", overlayMissingContentBounds),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
             ("仅任务页账户底栏显示组件", overlayTaskSidebarFooter),
@@ -1766,8 +1767,29 @@ private struct CodexQuotaCoreTestRunner {
                         sidebarFrame: sidebar, accountControlFrame: account, trailingButtonFrame: help,
                         additionalButtonFrames: [voice], accountVisibleContentFrame: CGRect(x: origin - 200, y: 0, width: 20, height: 20)
                     ), "缺少昵称几何不应改变底栏类型")
-                    try expect(fallback.accountContentMaxX == account.maxX, "无效昵称边界未保护账户内容")
+                    try expect(fallback.accountContentMaxX == nil, "无效昵称边界被当成整个账户按钮")
                 }
+            }
+        }
+    }
+
+    private static func overlayMissingContentBounds() throws {
+        for width: CGFloat in [336, 448, 600] {
+            let sidebar = CGRect(x: 40, y: 0, width: width, height: 800)
+            let account = CGRect(x: 48, y: 754, width: width - 60, height: 32)
+            let help = CGRect(x: sidebar.maxX - 40, y: 754, width: 32, height: 32)
+            for invalidContent: CGRect? in [nil, .zero, CGRect(x: -200, y: 0, width: 20, height: 20)] {
+                let metrics = try require(CodexOverlayGeometry.taskSidebarFooterMetrics(
+                    sidebarFrame: sidebar, accountControlFrame: account,
+                    trailingButtonFrame: help, accountVisibleContentFrame: invalidContent), "底栏识别失败")
+                let window = CGRect(x: 40, y: 0, width: 1200, height: 800)
+                let badge = CodexOverlayGeometry.badgeFrame(for: window,
+                    trailingControlMinX: metrics.trailingControlMinX,
+                    accountContentMaxX: metrics.accountContentMaxX)
+                let legacy = CodexOverlayGeometry.badgeFrame(for: window,
+                    trailingControlMinX: metrics.trailingControlMinX)
+                try expect(badge == legacy && badge.width >= 100, "昵称测量失败把额度压成零宽")
+                try expect(badge.maxX <= help.minX - 40, "回退占用了右侧语音按钮位")
             }
         }
     }

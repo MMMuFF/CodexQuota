@@ -128,7 +128,7 @@ Positive differences mean usage is ahead of elapsed time. Color indicates magnit
 
 Quota remains attached to a visible normal task window even when another app has focus. It does not independently float above unrelated windows. Settings, a collapsed sidebar, minimized/hidden windows, and other Spaces intentionally hide it.
 
-The overlay protects voice and help controls, including labeled buttons. When available, it uses avatar/nickname content bounds rather than the flexible account button's full click area; short names can reclaim otherwise unused space. Missing content geometry falls back conservatively. If Accessibility omits the microphone, a button-sized slot remains reserved.
+The overlay protects voice and help controls, including labeled buttons. When available, it uses avatar/nickname content bounds rather than the flexible account button's full click area; short names can reclaim otherwise unused space. Without reliable content bounds, it uses the legacy fixed left inset instead of treating the entire account button as nickname width. This fallback cannot precisely accommodate unusually long names; widening the sidebar may help. If Accessibility omits the microphone, a button-sized slot remains reserved.
 
 Text shortens progressively: full label → `46%·9/15·5d` → `46%·9/15` → `46%`. If even the minimum width is unavailable, it hides. Hover details retain the full information. CodexQuota does not add, enable or restore Codex's voice feature.
 

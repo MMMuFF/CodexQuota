@@ -1,5 +1,6 @@
 import AppKit
 import CodexQuotaCore
+import Sparkle
 
 private struct CheckFailure: Error { let message: String }
 
@@ -63,6 +64,9 @@ private struct AppTests {
         let checks: [(String, () throws -> Void)] = [
             ("详情卡包含自动使用勾选框", checkbox),
             ("详情卡突出余额且低频操作收进菜单", informationHierarchy),
+            ("更多菜单提供检查更新与自动更新开关", updateMenu),
+            ("更新安装等待空闲且只执行一次", deferredUpdateInstallation),
+            ("更新使用固定签名源且关闭系统画像", updateConfiguration),
             ("详情卡将数值与标题分列且时区只放提示", compactDetails),
             ("时间条使用中性色以区别额度条", distinctProgressColors),
             ("额度条在上且时间条紧邻耗尽预测", progressOrder),
@@ -135,7 +139,7 @@ private struct AppTests {
         controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: true, timeZone: .gmt)
         controller.view.setFrameSize(controller.preferredContentSize)
         controller.view.layoutSubtreeIfNeeded()
-        try expect(labels.contains { $0.stringValue == "Sep 16 08:00" }, "Reset date is not English")
+        try expect(labels.contains { $0.stringValue == "Sep 16 Wed 08:00" }, "Reset date or weekday is not English")
         try expect(labels.contains { $0.stringValue == "Pro expires" }, "Subscription label failed to split")
         for item in descendants(of: controller.view) where !item.isHidden {
             if let label = item as? NSTextField {
@@ -161,10 +165,14 @@ private struct AppTests {
         }
         controller.showError(hasCachedStatus: false)
         try expect(labels.contains { $0.stringValue == "Sign in to Codex and try again" }, "Error state is not English")
-        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 108, height: 28))
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 150, height: 28))
         chip.update(title: QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt), tooltip: "Quota", usageDeviation: nil)
         let text = chip.subviews.compactMap { $0 as? NSTextField }.first!.stringValue
         try expect(text.contains("Sep 16") || text.contains("9/16"), "Compact English chip loses date")
+        try expect(text.contains("Wed"), "Compact English date loses weekday")
+        let more = descendants(of: controller.view).compactMap { $0 as? NSButton }.first { $0.title == "More" }
+        try expect(more?.menu?.items.contains { $0.title == "Check for Updates…" } == true, "Update action untranslated")
+        try expect(more?.menu?.items.contains { $0.title == "Automatically Check and Install Updates" } == true, "Update preference untranslated")
     }
 
     static func publicResetSection() throws {
@@ -238,6 +246,60 @@ private struct AppTests {
         try expect(didQuit, "退出菜单没有连到原有确认流程")
     }
 
+    static func updateMenu() throws {
+        let controller = QuotaPopoverViewController()
+        let more = descendants(of: controller.view).compactMap { $0 as? NSButton }.first { $0.title == "更多" }
+        try expect(more?.menu?.items.contains { $0.title == "检查更新…" } == true, "缺少手动检查更新入口")
+        try expect(more?.menu?.items.contains { $0.title == "自动检查并安装更新" } == true, "缺少自动更新开关")
+        var checks = 0
+        var automatic = true
+        controller.onCheckForUpdates = { checks += 1 }
+        controller.onAutomaticUpdatesChanged = { automatic = $0 }
+        controller.onUpdateMenuOpening = { controller.updateSoftwareUpdateMenu(canCheck: true, automatic: automatic) }
+        controller.onUpdateMenuOpening?()
+        let menu = more!.menu!
+        menu.performActionForItem(at: 0)
+        try expect(checks == 1, "检查更新未连接动作")
+        menu.performActionForItem(at: 1)
+        try expect(!automatic && menu.items[1].state == .off, "自动更新关闭未回读")
+        menu.performActionForItem(at: 1)
+        try expect(automatic && menu.items[1].state == .on, "自动更新重新启用未回读")
+        controller.updateSoftwareUpdateMenu(canCheck: false, automatic: true)
+        try expect(!menu.items[0].isEnabled, "检查中仍可重复触发")
+        controller.onUpdateMenuOpening = nil
+    }
+
+    static func deferredUpdateInstallation() throws {
+        let updater = AppUpdateController()
+        var idle = false
+        var installs = 0
+        updater.canInstall = { idle }
+        updater.deferInstallation({ installs += 1 }, automatic: false)
+        updater.installIfReady()
+        try expect(installs == 0, "操作未完成时就替换应用")
+        idle = true
+        updater.installIfReady()
+        updater.installIfReady()
+        try expect(installs == 1, "空闲后未安装或重复安装")
+    }
+
+    static func updateConfiguration() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("Resources/Info.plist"))
+        let info = try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: Any]
+        try expect(info["SUFeedURL"] as? String == "https://github.com/MMMuFF/CodexQuota/releases/latest/download/appcast.xml", "更新源偏离本项目正式 Release")
+        for key in ["SUEnableAutomaticChecks", "SUAutomaticallyUpdate", "SUVerifyUpdateBeforeExtraction", "SURequireSignedFeed"] {
+            try expect(info[key] as? Bool == true, "更新配置缺失：\(key)")
+        }
+        try expect(info["SUEnableSystemProfiling"] as? Bool == false, "更新器开启了系统画像")
+        try expect(info["SUScheduledCheckInterval"] as? Int == 86400, "后台检查频率错误")
+        try expect(Data(base64Encoded: info["SUPublicEDKey"] as? String ?? "")?.count == 32, "缺少更新签名公钥")
+        let comparator = SUStandardVersionComparator()
+        try expect(comparator.compareVersion("33", toVersion: "32") == .orderedDescending, "新版构建号未递增")
+        try expect(comparator.compareVersion("33", toVersion: "33") == .orderedSame, "同版本被误报更新")
+        try expect(comparator.compareVersion("32", toVersion: "33") == .orderedAscending, "旧版本被误当新版")
+    }
+
     static func compactDetails() throws {
         let controller = QuotaPopoverViewController()
         let labels = descendants(of: controller.view).compactMap { $0 as? NSTextField }
@@ -250,7 +312,9 @@ private struct AppTests {
         controller.updatePublicReset(try PublicResetStatus.parse(PublicResetHTTPTests.fixture), failed: false)
         try expect(labels.contains { $0.stringValue == "98%" }, "余额没有独立展示")
         try expect(labels.contains { $0.stringValue == "7天后重置" }, "重置倒计时没有独立展示")
-        try expect(labels.contains { $0.stringValue == "9月19日 16:11" }, "完整重置时间丢失")
+        try expect(labels.contains { $0.stringValue == "9月19日 周六 16:11" }, "完整重置时间或星期丢失")
+        try expect(labels.contains { $0.stringValue == "9月28日 周一 · 16天" }, "会员到期星期丢失")
+        try expect(labels.contains { $0.stringValue == "最早 9月19日 周六 16:11 · 7天" }, "重置券到期星期丢失")
         try expect(labels.contains { $0.stringValue == "重置券 3张" }, "重置券数量未放入权益行")
         try expect(!labels.contains { $0.stringValue.contains("Asia/") }, "技术时区名称仍占用界面")
         try expect(labels.contains { ($0.toolTip ?? "").contains("Asia/") }, "收起时区后无法查阅")
@@ -364,13 +428,13 @@ private struct AppTests {
         controller.update(status: account)
         controller.showLoading(previousStatus: account)
         controller.updatePublicReset(status, failed: false, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
-        try expect(labels.contains { $0.stringValue == "最近重置公告：9月12日 09:30" }, "上海公告时间错误")
+        try expect(labels.contains { $0.stringValue == "最近重置公告：9月12日 周六 09:30" }, "上海公告时间错误")
         controller.refreshTimeZone(TimeZone(identifier: "America/Los_Angeles")!)
-        try expect(labels.contains { $0.stringValue == "最近重置公告：9月11日 18:30" }, "时区变化未重排公告")
+        try expect(labels.contains { $0.stringValue == "最近重置公告：9月11日 周五 18:30" }, "时区变化未重排公告")
         try expect(labels.contains { ($0.toolTip ?? "").contains("America/Los_Angeles") }, "缺少本机时区说明")
         try expect(buttons.first { $0.title == "刷新" }?.isEnabled == false, "时区变化重新启用了刷新按钮")
         try expect(buttons.first { $0.title.hasPrefix("使用重置券") }?.isEnabled == false, "公告刷新启用了用券按钮")
-        try expect(labels.contains { $0.stringValue == "9月11日 18:30" }, "个人额度未随时区变化")
+        try expect(labels.contains { $0.stringValue == "9月11日 周五 18:30" }, "个人额度未随时区变化")
         controller.updatePublicReset(status, failed: true)
         try expect(labels.contains { $0.stringValue.contains("显示上次公告") }, "缓存公告未标注过时")
         try expect(labels.contains { $0.stringValue.contains("最近重置公告：") }, "网络失败丢失上次公告")
@@ -612,6 +676,17 @@ private struct AppTests {
             try expect(label.stringValue == expected,
                        "宽度 \(width)，实际 \(chip.bounds.width)，文字 \(label.stringValue)，期望 \(expected)")
             try expect(chip.accessibilityLabel()?.contains("完整日期与天数") == true, "精简文字丢失完整辅助功能说明")
+        }
+        let sundayTitle = "46% · 9月20日 周日 · 5天"
+        for width: CGFloat in [260, 150, 125, 90, 44, 260] {
+            chip.setFrameSize(NSSize(width: width, height: 28))
+            chip.update(title: sundayTitle, tooltip: sundayTitle, usageDeviation: nil)
+            chip.layoutSubtreeIfNeeded()
+            if label.stringValue != "46%" {
+                try expect(label.stringValue.contains("周日"), "侧栏精简误删周日或遗漏星期")
+            }
+            if width >= 125 { try expect(label.stringValue != "46%", "足够宽时仍丢失日期星期") }
+            try expect((label.cell?.cellSize.width ?? 0) <= label.frame.width, "星期导致侧栏文字截断")
         }
     }
 

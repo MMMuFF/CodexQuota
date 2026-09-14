@@ -195,7 +195,7 @@ public enum QuotaDisplayFormatter {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: L("zh_CN", "en_US_POSIX"))
         formatter.timeZone = timeZone
-        formatter.dateFormat = L("M月d日", "MMM d")
+        formatter.dateFormat = L("M月d日 EEE", "MMM d EEE")
         return formatter.string(from: date)
     }
 
@@ -204,7 +204,7 @@ public enum QuotaDisplayFormatter {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: L("zh_CN", "en_US_POSIX"))
         formatter.timeZone = timeZone
-        formatter.dateFormat = L("M月d日 HH:mm", "MMM d HH:mm")
+        formatter.dateFormat = L("M月d日 EEE HH:mm", "MMM d EEE HH:mm")
         return formatter.string(from: date)
     }
 }

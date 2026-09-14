@@ -40,6 +40,26 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
     private var standardChipTooltip = L("正在读取 Codex 额度", "Loading Codex quota")
     private var standardChipDeviation: QuotaUsageDeviation?
 
+    var canTerminateForUpdate: Bool { !isConsuming && !isConfirmingReset }
+    var canInstallUpdate: Bool { canTerminateForUpdate && refreshTask == nil && !popover.isShown }
+
+    func configureSoftwareUpdates(
+        check: @escaping () -> Void,
+        state: @escaping () -> (canCheck: Bool, automatic: Bool),
+        setAutomatic: @escaping (Bool) -> Void
+    ) {
+        popoverController.onCheckForUpdates = { [weak self] in
+            self?.popover.performClose(nil)
+            check()
+        }
+        popoverController.onAutomaticUpdatesChanged = setAutomatic
+        popoverController.onUpdateMenuOpening = { [weak self] in
+            let current = state()
+            self?.popoverController.updateSoftwareUpdateMenu(canCheck: current.canCheck, automatic: current.automatic)
+        }
+        popoverController.onUpdateMenuOpening?()
+    }
+
     init(
         service: QuotaServicing = QuotaService(),
         defaults: UserDefaults = .standard,

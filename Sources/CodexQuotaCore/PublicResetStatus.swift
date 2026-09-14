@@ -169,7 +169,7 @@ public struct PublicResetStatus: Decodable, Sendable {
         formatter.locale = Locale(identifier: L("zh_Hans_CN", "en_US_POSIX"))
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = timeZone
-        formatter.dateFormat = L("M月d日 HH:mm", "MMM d HH:mm")
+        formatter.dateFormat = L("M月d日 EEE HH:mm", "MMM d EEE HH:mm")
         return formatter.string(from: date)
     }
 }

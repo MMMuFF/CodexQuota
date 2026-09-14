@@ -12,6 +12,8 @@ verification_dir="${staging_root}/verification"
 contents_dir="${app_dir}/Contents"
 macos_dir="${contents_dir}/MacOS"
 resources_dir="${contents_dir}/Resources"
+frameworks_dir="${contents_dir}/Frameworks"
+sparkle_root="${project_dir}/.build/artifacts/sparkle/Sparkle"
 swiftpm_state_dir="${project_dir}/.build/swiftpm-state"
 module_cache_dir="${swiftpm_state_dir}/module-cache"
 signing_identity="${CODE_SIGN_IDENTITY:--}"
@@ -37,7 +39,9 @@ swift build \
   -c release \
   --product CodexQuota
 
-mkdir -p "${macos_dir}" "${resources_dir}"
+mkdir -p "${macos_dir}" "${resources_dir}" "${frameworks_dir}"
+/usr/bin/ditto "${sparkle_root}/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework" "${frameworks_dir}/Sparkle.framework"
+cp -f "${sparkle_root}/LICENSE" "${resources_dir}/Sparkle-LICENSE.txt"
 cp -f "${project_dir}/.build/release/CodexQuota" "${macos_dir}/CodexQuota"
 cp -f "${project_dir}/Resources/Info.plist" "${contents_dir}/Info.plist"
 cp -f "${project_dir}/Resources/AppIcon.icns" "${resources_dir}/AppIcon.icns"
@@ -60,6 +64,7 @@ COPYFILE_DISABLE=1 /usr/bin/ditto \
   "${output_archive}"
 /usr/bin/ditto -x -k "${output_archive}" "${verification_dir}"
 /usr/bin/codesign --verify --deep --strict "${verification_dir}/CodexQuota.app"
+(cd "${output_archive:h}" && /usr/bin/shasum -a 256 "${output_archive:t}" > "${output_archive:t}.sha256")
 
 if [[ "${signing_identity}" == "-" ]]; then
   echo "Warning: ad-hoc signature; rebuilding may require Accessibility permission again." >&2

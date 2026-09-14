@@ -6,6 +6,11 @@ final class QuotaPopoverViewController: NSViewController {
     var onUseResetCredit: (() -> Void)?
     var onRefresh: (() -> Void)?
     var onQuit: (() -> Void)?
+    var onCheckForUpdates: (() -> Void)?
+    var onAutomaticUpdatesChanged: ((Bool) -> Void)?
+    var onUpdateMenuOpening: (() -> Void)?
+    private let checkUpdatesItem = NSMenuItem(title: L("检查更新…", "Check for Updates…"), action: nil, keyEquivalent: "")
+    private let automaticUpdatesItem = NSMenuItem(title: L("自动检查并安装更新", "Automatically Check and Install Updates"), action: nil, keyEquivalent: "")
     var onHoverChanged: ((Bool) -> Void)?
     var onAutomaticResetChanged: ((Bool) -> Void)?
 
@@ -117,6 +122,16 @@ final class QuotaPopoverViewController: NSViewController {
         moreButton.target = self
         moreButton.action = #selector(showMoreMenu)
         let menu = NSMenu()
+        menu.autoenablesItems = false
+        checkUpdatesItem.target = self
+        checkUpdatesItem.action = #selector(checkForUpdates)
+        automaticUpdatesItem.target = self
+        automaticUpdatesItem.action = #selector(toggleAutomaticUpdates)
+        checkUpdatesItem.isEnabled = false
+        automaticUpdatesItem.isEnabled = false
+        menu.addItem(checkUpdatesItem)
+        menu.addItem(automaticUpdatesItem)
+        menu.addItem(.separator())
         let quitItem = NSMenuItem(title: L("退出…", "Quit…"), action: #selector(quit), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -210,7 +225,21 @@ final class QuotaPopoverViewController: NSViewController {
     }
 
     @objc private func showMoreMenu() {
+        onUpdateMenuOpening?()
         moreButton.menu?.popUp(positioning: nil, at: NSPoint(x: 0, y: moreButton.bounds.maxY), in: moreButton)
+    }
+
+    func updateSoftwareUpdateMenu(canCheck: Bool, automatic: Bool, available: Bool = true) {
+        checkUpdatesItem.isEnabled = available && canCheck
+        automaticUpdatesItem.isEnabled = available
+        automaticUpdatesItem.state = automatic ? .on : .off
+    }
+
+    @objc private func checkForUpdates() { onCheckForUpdates?() }
+
+    @objc private func toggleAutomaticUpdates() {
+        onAutomaticUpdatesChanged?(automaticUpdatesItem.state != .on)
+        onUpdateMenuOpening?()
     }
 
     func updateAutomaticReset(enabled: Bool, available: Bool) {

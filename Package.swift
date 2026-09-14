@@ -11,6 +11,9 @@ let package = Package(
         .library(name: "CodexQuotaCore", targets: ["CodexQuotaCore"]),
         .executable(name: "CodexQuota", targets: ["CodexQuotaApp"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+    ],
     targets: [
         .target(
             name: "CodexQuotaCore",
@@ -18,8 +21,9 @@ let package = Package(
         ),
         .executableTarget(
             name: "CodexQuotaApp",
-            dependencies: ["CodexQuotaCore"],
-            path: "Sources/CodexQuotaApp"
+            dependencies: ["CodexQuotaCore", .product(name: "Sparkle", package: "Sparkle")],
+            path: "Sources/CodexQuotaApp",
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
     ]
 )

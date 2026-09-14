@@ -38,13 +38,17 @@ private struct CodexQuotaCoreTestRunner {
                 let status = QuotaStatus(remainingPercent: 98, resetsAt: date, windowDurationMins: 10080,
                     planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 3,
                     nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-7 * 86400), warnings: [])
-                try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "English date or days missing")
+                try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "Compact title must show days, not weekday")
+                try expect(QuotaDisplayFormatter.hoverTitle(for: status, timeZone: .gmt) == "98% · Sep 19 Sat 08:00 · 7d", "English reset weekday missing")
+                try expect(QuotaDisplayFormatter.subscriptionExpirationText(for: status, timeZone: .gmt) == "Pro expires: Sep 19 Sat · 7d", "English membership weekday missing")
+                try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt) == "Earliest credit: Sep 19 Sat 08:00 · 7d", "English credit weekday missing")
                 try expect(QuotaDisplayFormatter.exhaustionForecastText(for: status) == "Not enough data to forecast yet", "Early-cycle forecast message untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt).hasPrefix("Earliest credit:"), "Credit detail untranslated")
                 try expect(QuotaDisplayFormatter.resetCreditActionState(availableCount: 0).title == "No reset credits", "Empty state untranslated")
                 let publicStatus = try PublicResetStatus.parse(PublicResetTests.fixture(scheduled: PublicResetTests.scheduled))
                 let title = publicStatus.presentation(now: date, timeZone: .gmt).title
                 try expect(title.contains("Pending confirmation"), "Public reset state untranslated")
+                try expect(title.contains("Sep 12 Sat 01:30"), "Public reset English weekday missing")
                 try expect(QuotaServiceError.accountChanged.errorDescription?.contains("account changed") == true, "Error untranslated")
                 print("English core checks passed")
             } catch { print("English core check failed: \(error)"); exit(1) }
@@ -1031,12 +1035,12 @@ private struct CodexQuotaCoreTestRunner {
         )
         try expect(
             QuotaDisplayFormatter.hoverTitle(for: status, timeZone: shanghai)
-                == "39% · 7月25日 13:19 · 4天",
+                == "39% · 7月25日 周六 13:19 · 4天",
             "悬浮标题错误"
         )
         try expect(
             QuotaDisplayFormatter.tooltip(for: status, timeZone: shanghai)
-                == "39% · 7月25日 13:19 · 4天\nPro 到期：7月31日 · 10天\n最早到期券：7月25日 08:30 · 4天",
+                == "39% · 7月25日 周六 13:19 · 4天\nPro 到期：7月31日 周五 · 10天\n最早到期券：7月25日 周六 08:30 · 4天",
             "悬停文案错误"
         )
 
@@ -1053,7 +1057,7 @@ private struct CodexQuotaCoreTestRunner {
         )
         try expect(
             QuotaDisplayFormatter.tooltip(for: noCreditStatus, timeZone: shanghai)
-                == "39% · 7月25日 13:19 · 4天\nPro 到期：7月31日 · 10天\n重置券：暂无",
+                == "39% · 7月25日 周六 13:19 · 4天\nPro 到期：7月31日 周五 · 10天\n重置券：暂无",
             "无重置券文案错误"
         )
 
@@ -1072,7 +1076,7 @@ private struct CodexQuotaCoreTestRunner {
             QuotaDisplayFormatter.subscriptionExpirationText(
                 for: plusStatus,
                 timeZone: shanghai
-            ) == "Plus 到期：7月31日 · 10天",
+            ) == "Plus 到期：7月31日 周五 · 10天",
             "Plus 到期文案错误"
         )
 
@@ -1091,7 +1095,7 @@ private struct CodexQuotaCoreTestRunner {
             QuotaDisplayFormatter.subscriptionExpirationText(
                 for: proLiteStatus,
                 timeZone: shanghai
-            ) == "Pro Lite 到期：7月31日 · 10天",
+            ) == "Pro Lite 到期：7月31日 周五 · 10天",
             "Pro Lite 到期文案错误"
         )
 
@@ -1375,7 +1379,7 @@ private struct CodexQuotaCoreTestRunner {
             QuotaDisplayFormatter.exhaustionForecastText(
                 for: status(remainingPercent: 30),
                 timeZone: shanghai
-            ) == "按周期均速，预计 9月2日 20:00 用完",
+            ) == "按周期均速，预计 9月2日 周三 20:00 用完",
             "预计用完时间文案错误"
         )
         try expect(

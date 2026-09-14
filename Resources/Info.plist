@@ -29,7 +29,25 @@
     <key>CFBundleShortVersionString</key>
 	<string>0.8.5</string>
     <key>CFBundleVersion</key>
-	<string>32</string>
+	<string>34</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/MMMuFF/CodexQuota/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>tYjbTx+M9xq34SP3xE9fHXr2CeLh0EkbdnFKK4cT0xc=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
+    <key>SUEnableSystemProfiling</key>
+    <false/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
+    <key>SURequireSignedFeed</key>
+    <true/>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>

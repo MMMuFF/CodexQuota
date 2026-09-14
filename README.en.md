@@ -14,7 +14,7 @@ Hover over the quota to see cycle progress, estimated exhaustion, membership exp
 
 Screenshots use synthetic data. v0.8.4 adds the bilingual interface and short-name layout improvements. See the [release notes](docs/releases/v0.8.4.md).
 
-Upcoming v0.8.5 adds a 15% forecast threshold. See the [update notes](docs/releases/v0.8.5.md). It is included in current source and local builds, but not in the published v0.8.4 ZIP.
+v0.8.5 adds a 15% forecast threshold, weekdays on dates, signed automatic updates and a fallback for missing nickname bounds. See the [update notes](docs/releases/v0.8.5.md). Upgrading from v0.8.4 or earlier requires one manual installation of v0.8.5 to obtain the updater.
 
 > [!IMPORTANT]
 > Release ZIPs and local builds without `CODE_SIGN_IDENTITY` use ad-hoc signing and are not notarized with a Developer ID. Download only from this repository or review and build the source. Replacing or rebuilding the app may require granting Accessibility permission again.
@@ -74,7 +74,7 @@ cd CodexQuota
 ./scripts/install.sh
 ```
 
-The installer builds `.build/artifacts/CodexQuota.zip`, validates the bundle ID/version/signature, installs to `/Applications/CodexQuota.app`, and launches that fixed path. It refuses to replace an app while any CodexQuota instance is running. It does not use `sudo`, download dependencies, remove Gatekeeper quarantine on the installed app, or modify `/Applications/ChatGPT.app`.
+The installer builds `.build/artifacts/CodexQuota.zip`, validates the bundle ID/version/signature, installs to `/Applications/CodexQuota.app`, and launches that fixed path. It refuses to replace an app while any CodexQuota instance is running. It does not use `sudo`, remove Gatekeeper quarantine on the installed app, or modify `/Applications/ChatGPT.app`. The first source build downloads the pinned Sparkle dependency through SwiftPM; `--archive` only installs a local ZIP without downloading dependencies.
 
 A legacy `~/Applications/CodexQuota.app` is migrated only after bundle validation, with rollback on failure. If both locations contain copies, the installer stops instead of choosing or deleting one for you.
 
@@ -160,11 +160,17 @@ The app uses [Codex Resets](https://codex-resets.com/)' [public HTTP API](https:
 
 These forecasts are third-party AI classifications, not commitments from Tibo or OpenAI. The API provides no historical accuracy; “80%” is not a validated success rate. A forecast's expiry is not a reset ETA. Original free-text windows without a machine-readable time zone remain original text. Explicit notices take precedence over forecasts.
 
-All structured times use the Mac's current time zone and show minutes, not seconds. Time-zone changes reformat the display automatically. Hover Local time for the zone identifier and source details. The app does not use IP geolocation or location permission.
+The default sidebar text stays `98% · Sep 19 · 7d`, without a weekday. Dates in hover details include the weekday, e.g. `Sep 19 Sat 16:11`. Dates and weekdays use the Mac's current time zone and show minutes, not seconds. Time-zone changes reformat the display automatically. Hover Local time for the zone identifier and source details. The app does not use IP geolocation or location permission.
 
 Public notices refresh independently at launch, wake, every five minutes and manually, respecting rate limits. Failure preserves the last successful notice in memory with a warning; it never changes personal cycle progress or automatic credit eligibility.
 
 ## Update
+
+Starting with v0.8.5, **More (···) → Check for Updates…** checks manually. **Automatically Check and Install Updates** is enabled by default: check daily, download and verify a stable GitHub Release, then install and relaunch when the detail card is closed and no refresh or credit action is running. Turning it off preserves manual checks; updates already handed to the installer may complete on quit.
+
+[Sparkle](https://sparkle-project.org/) requires signed update feeds and Ed25519-verified archives before extraction. It does not follow main, drafts or prereleases. Network/signature failures leave existing quota features running; manual checks show an error. macOS authorization is not bypassed. Ad-hoc signatures may still require granting Accessibility permission again after an update.
+
+**The first updater-enabled version must be installed manually.** v0.8.4 and earlier have no updater. The v0.8.5 Release includes a signed feed; future updates must preserve the signing trust chain. See the [maintainer guide](docs/automatic-updates.md).
 
 Quit via **More (···) → Quit…**, download the new ZIP and replace the single fixed copy in Applications. Reopen and reauthorize Accessibility if necessary.
 
@@ -201,7 +207,7 @@ For unavailable quota, confirm Codex is signed in and your network/VPN can reach
 
 The scripts exercise core logic and AppKit in separate Chinese/English test processes without changing macOS settings. Tests use synthetic data, fake services and windows owned by the test process; they do not consume real credits or inspect the live Codex Accessibility tree. Passing tests do not validate real TCC/Gatekeeper authorization or every cross-app/Space interaction.
 
-There are no third-party SwiftPM dependencies. Sources live in `Sources/CodexQuotaCore` and `Sources/CodexQuotaApp`. Explicit developer overrides can use `CODEX_QUOTA_CODEX_PATH`; production otherwise trusts only `/Applications/ChatGPT.app/Contents/Resources/codex`, not an arbitrary executable on `PATH`.
+Sparkle 2.10.0 is pinned as a SwiftPM binary dependency for secure updates; its license is bundled with the app. Sources live in `Sources/CodexQuotaCore` and `Sources/CodexQuotaApp`. Explicit developer overrides can use `CODEX_QUOTA_CODEX_PATH`; production otherwise trusts only `/Applications/ChatGPT.app/Contents/Resources/codex`, not an arbitrary executable on `PATH`.
 
 ## Data and privacy
 
@@ -209,6 +215,7 @@ There are no third-party SwiftPM dependencies. Sources live in `Sources/CodexQuo
 - Membership expiry uses a read-only request to `https://chatgpt.com/backend-api/subscriptions` with the current account's local login; same-account token claims are a fallback. Subscription dates are never guessed.
 - Account changes discard mismatched results. Subscription and credit-detail requests use ephemeral sessions without cookies/cache and reject redirects.
 - Public notice requests go only to `https://codex-resets.com/api/v1/status`, without account data, tokens, cookies or a request body. The server receives normal connection metadata such as IP. Notice/ETag caches are in memory.
+- Update requests connect to GitHub and its Release CDN, without Codex credentials or system-profile collection. Servers receive normal connection and application-update request metadata. Automatic updates can be disabled in More.
 - Tokens never enter UI state, project files or logs, and are not sent to third parties. There is no telemetry, advertising or analytics.
 - Reset consumption uses account-scoped idempotency to reduce duplicate use after uncertain network outcomes.
 

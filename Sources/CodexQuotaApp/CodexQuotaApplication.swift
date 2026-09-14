@@ -23,13 +23,25 @@ struct CodexQuotaApplication {
 @MainActor
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayController: QuotaOverlayController?
+    private let appUpdater = AppUpdateController()
     private let launchAtLoginCoordinator = LaunchAtLoginCoordinator()
     private let launchAtLoginService = MainAppLaunchAtLoginService()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         overlayController = QuotaOverlayController()
+        appUpdater.canInstall = { [weak self] in self?.overlayController?.canInstallUpdate ?? false }
+        overlayController?.configureSoftwareUpdates(
+            check: { [weak self] in self?.appUpdater.checkForUpdates() },
+            state: { [weak self] in (self?.appUpdater.canCheck ?? false, self?.appUpdater.automaticallyUpdates ?? false) },
+            setAutomatic: { [weak self] in self?.appUpdater.automaticallyUpdates = $0 }
+        )
+        appUpdater.start()
         _ = launchAtLoginCoordinator.ensureEnabled(
             using: launchAtLoginService
         )
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        (overlayController?.canTerminateForUpdate ?? true) ? .terminateNow : .terminateCancel
     }
 }

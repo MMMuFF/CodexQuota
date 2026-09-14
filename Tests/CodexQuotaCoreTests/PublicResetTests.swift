@@ -23,12 +23,14 @@ enum PublicResetTests {
         let now = ISO8601DateFormatter().date(from: "2026-09-12T00:00:00Z")!
         let shanghai = status.presentation(now: now, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
         let losAngeles = status.presentation(now: now, timeZone: TimeZone(identifier: "America/Los_Angeles")!)
-        try check(shanghai.title == "Tibo 重置：预计 9月12日 09:30", "北京时间转换不正确")
-        try check(losAngeles.title == "Tibo 重置：预计 9月11日 18:30", "未按夏令时和当地日期转换")
+        try check(shanghai.title == "Tibo 重置：预计 9月12日 周六 09:30", "北京时间或星期转换不正确")
+        try check(losAngeles.title == "Tibo 重置：预计 9月11日 周五 18:30", "未按夏令时和当地日期转换星期")
+        try check(losAngeles.detail.contains("公告发布：9月11日 周五 17:00"), "公告发布时间缺少当地星期")
+        try check(losAngeles.detail.contains("数据生成：9月12日 周六 01:00"), "数据生成时间缺少当地星期")
         let winter = scheduled.replacingOccurrences(of: "2026-09-12", with: "2026-12-12")
         let winterStatus = try PublicResetStatus.parse(fixture(scheduled: winter))
         try check(winterStatus.presentation(now: now, timeZone: TimeZone(identifier: "America/Los_Angeles")!).title
-            == "Tibo 重置：预计 12月11日 17:30", "冬令时偏移不正确")
+            == "Tibo 重置：预计 12月11日 周五 17:30", "冬令时偏移不正确")
         try check(status.presentation(now: now).title == status.presentation(now: now, timeZone: .autoupdatingCurrent).title,
                   "公告默认时区不是系统时区")
     }
@@ -60,7 +62,8 @@ enum PublicResetTests {
         let now = ISO8601DateFormatter().date(from: "2026-09-12T09:00:00Z")!
         let display = status.presentation(now: now, timeZone: TimeZone(identifier: "Asia/Shanghai")!)
         try check(display.title == "重置预测（非官方）：80%", "预测未标注非官方")
-        try check(display.latest == "最近发券公告：9月12日 16:09", "公告未区分券或未按当地时间显示")
+        try check(display.latest == "最近发券公告：9月12日 周六 16:09", "公告未区分券或未按当地时间显示")
+        try check(display.detail.contains("预测有效至：9月12日 周六 18:00"), "预测有效期缺少星期")
         try check(!display.title.contains("18:00"), "误将预测失效时间当作预计重置时间")
         try check(status.presentation(now: now.addingTimeInterval(3601)).title == "Tibo 重置：暂无预告", "过期预测仍在显示")
         let precedence = try PublicResetStatus.parse(fixture(scheduled: scheduled, watch: watch, latest: latest))
@@ -137,5 +140,9 @@ enum PublicResetTests {
             == QuotaDisplayFormatter.hoverTitle(for: status, timeZone: .autoupdatingCurrent), "个人额度默认仍写死北京时间")
         try check(QuotaDisplayFormatter.tooltip(for: status)
             == QuotaDisplayFormatter.tooltip(for: status, timeZone: .autoupdatingCurrent), "会员或重置券默认仍写死北京时间")
+        let local = TimeZone(identifier: "America/Los_Angeles")!
+        try check(QuotaDisplayFormatter.mainTitle(for: status, timeZone: local) == "50% · 9月11日 · 0天", "常显日期应保留天数而非星期")
+        try check(QuotaDisplayFormatter.tooltip(for: status, timeZone: local)
+            == "50% · 9月11日 周五 18:30 · 0天\nPro 到期：9月11日 周五 · 0天\n最早到期券：9月11日 周五 18:30 · 0天", "会员与券星期未随当地日期切换")
     }
 }

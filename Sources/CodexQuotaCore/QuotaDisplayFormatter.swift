@@ -25,7 +25,8 @@ public enum QuotaDisplayFormatter {
             from: status.fetchedAt,
             timeZone: timeZone
         )
-        return L("\(percent) · \(monthDay(resetsAt, timeZone: timeZone)) · \(days)天", "\(percent) · \(monthDay(resetsAt, timeZone: timeZone)) · \(days)d")
+        let date = monthDay(resetsAt, timeZone: timeZone, includesWeekday: false)
+        return L("\(percent) · \(date) · \(days)天", "\(percent) · \(date) · \(days)d")
     }
 
     public static func title(
@@ -190,12 +191,12 @@ public enum QuotaDisplayFormatter {
         return activeUntil <= status.fetchedAt
     }
 
-    private static func monthDay(_ date: Date, timeZone: TimeZone) -> String {
+    private static func monthDay(_ date: Date, timeZone: TimeZone, includesWeekday: Bool = true) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: L("zh_CN", "en_US_POSIX"))
         formatter.timeZone = timeZone
-        formatter.dateFormat = L("M月d日", "MMM d")
+        formatter.dateFormat = includesWeekday ? L("M月d日 EEE", "MMM d EEE") : L("M月d日", "MMM d")
         return formatter.string(from: date)
     }
 
@@ -204,7 +205,7 @@ public enum QuotaDisplayFormatter {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: L("zh_CN", "en_US_POSIX"))
         formatter.timeZone = timeZone
-        formatter.dateFormat = L("M月d日 HH:mm", "MMM d HH:mm")
+        formatter.dateFormat = L("M月d日 EEE HH:mm", "MMM d EEE HH:mm")
         return formatter.string(from: date)
     }
 }

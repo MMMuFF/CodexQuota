@@ -81,7 +81,7 @@ final class QuotaChipView: NSView {
     private func updateFittedTitle() {
         var compactTitle = fullTitle
             .replacingOccurrences(of: "月", with: "/")
-            .replacingOccurrences(of: "日", with: "")
+            .replacingOccurrences(of: "([0-9])日", with: "$1", options: .regularExpression)
             .replacingOccurrences(of: " · ", with: "·")
         for (index, month) in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].enumerated() {
             compactTitle = compactTitle.replacingOccurrences(of: "\(month) ", with: "\(index + 1)/")

@@ -66,6 +66,7 @@ private struct AppTests {
             ("详情卡突出余额且低频操作收进菜单", informationHierarchy),
             ("更多菜单提供检查更新与自动更新开关", updateMenu),
             ("更新安装等待空闲且只执行一次", deferredUpdateInstallation),
+            ("忙碌只延后安装而不拦截检查更新", updateChecksWhileBusy),
             ("更新使用固定签名源且关闭系统画像", updateConfiguration),
             ("详情卡将数值与标题分列且时区只放提示", compactDetails),
             ("时间条使用中性色以区别额度条", distinctProgressColors),
@@ -169,7 +170,7 @@ private struct AppTests {
         chip.update(title: QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt), tooltip: "Quota", usageDeviation: nil)
         let text = chip.subviews.compactMap { $0 as? NSTextField }.first!.stringValue
         try expect(text.contains("Sep 16") || text.contains("9/16"), "Compact English chip loses date")
-        try expect(text.contains("Wed"), "Compact English date loses weekday")
+        try expect(text.contains("4d") && !text.contains("Wed"), "Compact title must retain days without weekday")
         let more = descendants(of: controller.view).compactMap { $0 as? NSButton }.first { $0.title == "More" }
         try expect(more?.menu?.items.contains { $0.title == "Check for Updates…" } == true, "Update action untranslated")
         try expect(more?.menu?.items.contains { $0.title == "Automatically Check and Install Updates" } == true, "Update preference untranslated")
@@ -281,6 +282,19 @@ private struct AppTests {
         updater.installIfReady()
         updater.installIfReady()
         try expect(installs == 1, "空闲后未安装或重复安装")
+    }
+
+    static func updateChecksWhileBusy() throws {
+        let updater = AppUpdateController()
+        updater.canInstall = { false }
+        let native = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+        for kind: SPUUpdateCheck in [.updates, .updatesInBackground, .updateInformation] {
+            try updater.updater(native.updater, mayPerform: kind)
+        }
+        var installed = false
+        updater.deferInstallation({ installed = true }, automatic: false)
+        updater.installIfReady()
+        try expect(!installed, "放行检查时意外取消了安装保护")
     }
 
     static func updateConfiguration() throws {

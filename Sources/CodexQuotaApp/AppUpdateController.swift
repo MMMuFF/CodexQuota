@@ -1,5 +1,4 @@
 import AppKit
-import CodexQuotaCore
 import Sparkle
 
 @MainActor
@@ -31,11 +30,7 @@ final class AppUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
-        guard canInstall() else {
-            throw NSError(domain: "CodexQuota.Update", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: L("请等待当前操作完成后再检查更新。", "Wait for the current operation to finish before checking for updates.")
-            ])
-        }
+        // Checks and downloads may run while busy; only installation must wait.
     }
 
     func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem,

@@ -160,7 +160,7 @@ The app uses [Codex Resets](https://codex-resets.com/)' [public HTTP API](https:
 
 These forecasts are third-party AI classifications, not commitments from Tibo or OpenAI. The API provides no historical accuracy; “80%” is not a validated success rate. A forecast's expiry is not a reset ETA. Original free-text windows without a machine-readable time zone remain original text. Explicit notices take precedence over forecasts.
 
-All structured dates include a weekday, e.g. `Sep 19 Sat 16:11`. Dates and weekdays use the Mac's current time zone and show minutes, not seconds. Time-zone changes reformat the display automatically. Compact sidebar dates retain the weekday; very narrow layouts fall back to the percentage, with full details on hover. Hover Local time for the zone identifier and source details. The app does not use IP geolocation or location permission.
+The default sidebar text stays `98% · Sep 19 · 7d`, without a weekday. Dates in hover details include the weekday, e.g. `Sep 19 Sat 16:11`. Dates and weekdays use the Mac's current time zone and show minutes, not seconds. Time-zone changes reformat the display automatically. Hover Local time for the zone identifier and source details. The app does not use IP geolocation or location permission.
 
 Public notices refresh independently at launch, wake, every five minutes and manually, respecting rate limits. Failure preserves the last successful notice in memory with a warning; it never changes personal cycle progress or automatic credit eligibility.
 

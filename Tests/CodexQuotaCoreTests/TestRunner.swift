@@ -38,7 +38,7 @@ private struct CodexQuotaCoreTestRunner {
                 let status = QuotaStatus(remainingPercent: 98, resetsAt: date, windowDurationMins: 10080,
                     planType: "pro", subscriptionActiveUntil: date, resetCreditsAvailableCount: 3,
                     nearestResetCreditExpiresAt: date, fetchedAt: date.addingTimeInterval(-7 * 86400), warnings: [])
-                try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 Sat · 7d", "English date, weekday or days missing")
+                try expect(QuotaDisplayFormatter.mainTitle(for: status, timeZone: .gmt) == "98% · Sep 19 · 7d", "Compact title must show days, not weekday")
                 try expect(QuotaDisplayFormatter.hoverTitle(for: status, timeZone: .gmt) == "98% · Sep 19 Sat 08:00 · 7d", "English reset weekday missing")
                 try expect(QuotaDisplayFormatter.subscriptionExpirationText(for: status, timeZone: .gmt) == "Pro expires: Sep 19 Sat · 7d", "English membership weekday missing")
                 try expect(QuotaDisplayFormatter.resetCreditDetailText(for: status, timeZone: .gmt) == "Earliest credit: Sep 19 Sat 08:00 · 7d", "English credit weekday missing")
@@ -1030,7 +1030,7 @@ private struct CodexQuotaCoreTestRunner {
 
         try expect(
             QuotaDisplayFormatter.mainTitle(for: status, timeZone: shanghai)
-                == "39% · 7月25日 周六 · 4天",
+                == "39% · 7月25日 · 4天",
             "主文案错误"
         )
         try expect(

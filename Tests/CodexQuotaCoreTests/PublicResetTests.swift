@@ -141,7 +141,7 @@ enum PublicResetTests {
         try check(QuotaDisplayFormatter.tooltip(for: status)
             == QuotaDisplayFormatter.tooltip(for: status, timeZone: .autoupdatingCurrent), "会员或重置券默认仍写死北京时间")
         let local = TimeZone(identifier: "America/Los_Angeles")!
-        try check(QuotaDisplayFormatter.mainTitle(for: status, timeZone: local) == "50% · 9月11日 周五 · 0天", "个人额度星期未随当地日期切换")
+        try check(QuotaDisplayFormatter.mainTitle(for: status, timeZone: local) == "50% · 9月11日 · 0天", "常显日期应保留天数而非星期")
         try check(QuotaDisplayFormatter.tooltip(for: status, timeZone: local)
             == "50% · 9月11日 周五 18:30 · 0天\nPro 到期：9月11日 周五 · 0天\n最早到期券：9月11日 周五 18:30 · 0天", "会员与券星期未随当地日期切换")
     }

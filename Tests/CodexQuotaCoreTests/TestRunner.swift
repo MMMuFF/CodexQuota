@@ -994,9 +994,10 @@ private struct CodexQuotaCoreTestRunner {
         try expect(
             candidates == [
                 "/private/tmp/trusted-codex",
+                "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex",
                 "/Applications/ChatGPT.app/Contents/Resources/codex",
             ],
-            "候选路径意外包含 PATH 中的可执行文件"
+            "候选路径必须支持新版打包入口、保留旧版回退且不读取 PATH"
         )
     }
 

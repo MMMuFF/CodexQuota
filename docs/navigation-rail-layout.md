@@ -1,6 +1,6 @@
 # 新版窄导航栏适配 / Navigation rail layout
 
-目标版本：0.8.6（35）。实际发布和验收状态见对应 Release 说明。
+目标版本：0.8.6（36）。实际发布和验收状态见对应 Release 说明。
 
 - 旧版账户底栏继续横排；新版窄导航栏在帮助按钮上方空白处显示三行：剩余百分比、短日期、剩余天数。
 - 文字不旋转，统一采用原有次级文字色；偏差下划线在悬停时保留。默认日期不加星期，完整日期仍在详情卡显示。
@@ -25,4 +25,4 @@ git diff --check
 
 ## English
 
-Target version: 0.8.6 (35); see its Release for publication and acceptance status. Legacy footers retain the horizontal chip. A detected narrow navigation rail displays remaining percentage, short reset date, and days remaining in three centered rows above the help button. The detail card opens to the right; the subtle deviation underline stays visible on hover. Placement uses bounded Accessibility-tree inspection and fails closed if controls or free space cannot be established. Real Codex Accessibility compatibility and live interaction still need post-install acceptance. Generated previews use demo data only.
+Target version: 0.8.6 (36); see its Release for publication and acceptance status. Legacy footers retain the horizontal chip. A detected narrow navigation rail displays remaining percentage, short reset date, and days remaining in three centered rows above the help button. The detail card opens to the right; the subtle deviation underline stays visible on hover. Placement uses bounded Accessibility-tree inspection and fails closed if controls or free space cannot be established. Real Codex Accessibility compatibility and live interaction still need post-install acceptance. Generated previews use demo data only.

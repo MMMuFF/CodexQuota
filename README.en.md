@@ -4,7 +4,7 @@
 
 An open-source macOS companion app that shows remaining quota in the Codex sidebar: beside the account name in legacy layouts, or above Help in the new narrow navigation rail. No menu-bar clutter and no modifications to the Codex app bundle.
 
-v0.8.6 adds three-row navigation-rail layout. See [release notes and validation boundaries](docs/releases/v0.8.6.md).
+v0.8.6 adds a three-row navigation-rail layout and fixes data loading after Codex relocated its bundled CLI. See [release notes and validation boundaries](docs/releases/v0.8.6.md).
 
 ![Navigation-rail layout preview with demo data](docs/images/navigation-rail-preview-en.png)
 

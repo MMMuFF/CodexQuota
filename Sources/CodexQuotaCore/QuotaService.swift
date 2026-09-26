@@ -163,6 +163,7 @@ enum CodexExecutableLocator {
             candidates.append((override as NSString).expandingTildeInPath)
         }
 
+        candidates.append("/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex")
         candidates.append("/Applications/ChatGPT.app/Contents/Resources/codex")
         return candidates
     }

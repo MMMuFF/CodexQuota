@@ -2,7 +2,11 @@
 
 [简体中文](README.md) | **English**
 
-An open-source macOS companion app that shows your remaining Codex quota beside your account name in the Codex Desktop sidebar. No menu-bar clutter and no modifications to the Codex app bundle.
+An open-source macOS companion app that shows remaining quota in the Codex sidebar: beside the account name in legacy layouts, or above Help in the new narrow navigation rail. No menu-bar clutter and no modifications to the Codex app bundle.
+
+v0.8.6 adds three-row navigation-rail layout. See [release notes and validation boundaries](docs/releases/v0.8.6.md).
+
+![Navigation-rail layout preview with demo data](docs/images/navigation-rail-preview-en.png)
 
 [Download the latest release](https://github.com/MMMuFF/CodexQuota/releases/latest) · [Installation](#installation) · [Reading the indicators](#reading-the-indicators)
 
@@ -32,7 +36,7 @@ v0.8.5 adds a 15% forecast threshold, weekdays on dates, signed automatic update
 - Sidebar following, safe spacing around voice/help controls and progressive text shortening.
 - Stays attached to a visible Codex window when another app has focus, without floating above unrelated windows.
 - Hidden in settings, with the sidebar collapsed, or when Codex is minimized/hidden or not visible in the current Space.
-- No Dock icon, menu-bar item, telemetry, ads, or third-party Swift dependencies.
+- No Dock icon, menu-bar item, telemetry or ads. Signed automatic updates use Sparkle.
 
 ## Languages
 

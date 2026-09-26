@@ -6,6 +6,7 @@ enum CodexSidebarPlacement {
     case permissionRequired
     case unavailable
     case hidden
+    case vertical(accessibilityFrame: CGRect)
     case visible(
         trailingEdgeX: CGFloat,
         footerCenterBottomInset: CGFloat?,
@@ -41,6 +42,7 @@ final class CodexSidebarLocator {
 
     private enum SearchResult {
         case elements(SidebarElements)
+        case navigationRail(AXUIElement)
         case hidden
         case unavailable
     }
@@ -51,6 +53,7 @@ final class CodexSidebarLocator {
     private var cachedProcessIdentifier: pid_t?
     private var cachedWindowID: Int?
     private var cachedElements: SidebarElements?
+    private var cachedNavigationRail: AXUIElement?
     private var lastSearchAt = Date.distantPast
     private var taskSidebarContinuity = CodexTaskSidebarContinuity()
     private var lastFooterMetrics: CodexTaskSidebarFooterMetrics?
@@ -67,9 +70,20 @@ final class CodexSidebarLocator {
             cachedProcessIdentifier = processIdentifier
             cachedWindowID = window.windowID
             cachedElements = nil
+            cachedNavigationRail = nil
             lastSearchAt = .distantPast
             taskSidebarContinuity.reset()
             lastFooterMetrics = nil
+        }
+
+        if let rail = cachedNavigationRail {
+            if let railFrame = frame(of: rail),
+               CodexOverlayGeometry.isNavigationRail(railFrame, within: window.accessibilityFrame),
+               let controls = navigationControlFrames(in: rail) {
+                return navigationPlacement(railFrame: railFrame, windowFrame: window.accessibilityFrame, controls: controls)
+            }
+            cachedNavigationRail = nil
+            lastSearchAt = .distantPast
         }
 
         if let cachedElements {
@@ -92,6 +106,13 @@ final class CodexSidebarLocator {
             processIdentifier: processIdentifier,
             targetFrame: window.accessibilityFrame
         ) {
+        case let .navigationRail(rail):
+            cachedNavigationRail = rail
+            cachedElements = nil
+            taskSidebarContinuity.reset()
+            lastFooterMetrics = nil
+            guard let railFrame = frame(of: rail), let controls = navigationControlFrames(in: rail) else { return .hidden }
+            return navigationPlacement(railFrame: railFrame, windowFrame: window.accessibilityFrame, controls: controls)
         case let .elements(elements):
             cachedElements = elements
             guard let placement = placement(
@@ -150,6 +171,11 @@ final class CodexSidebarLocator {
             cursor += 1
 
             let role = stringAttribute(item.element, kAXRoleAttribute as CFString)
+            if let elementFrame = frame(of: item.element),
+               CodexOverlayGeometry.isNavigationRail(elementFrame, within: targetFrame),
+               let controls = navigationControlFrames(in: item.element), controls.count >= 4 {
+                return .navigationRail(item.element)
+            }
             if anchor == nil,
                role == kAXSplitterRole as String,
                let elementFrame = frame(of: item.element),
@@ -310,6 +336,35 @@ final class CodexSidebarLocator {
             return .nonTask
         }
         return .task(metrics: metrics)
+    }
+
+    private func navigationPlacement(railFrame: CGRect, windowFrame: CGRect, controls: [CGRect]) -> CodexSidebarPlacement {
+        guard let badge = CodexOverlayGeometry.navigationRailBadgeFrame(
+            railFrame: railFrame, windowFrame: windowFrame, controlFrames: controls
+        ) else { return .hidden }
+        return .vertical(accessibilityFrame: badge)
+    }
+
+    private func navigationControlFrames(in rail: AXUIElement) -> [CGRect]? {
+        var queue: [(AXUIElement, Int)] = [(rail, 0)]
+        var cursor = 0
+        var controls: [CGRect] = []
+        while cursor < queue.count, cursor < 256 {
+            let (element, depth) = queue[cursor]
+            cursor += 1
+            let role = stringAttribute(element, kAXRoleAttribute as CFString)
+            if role == kAXButtonRole as String || role == kAXPopUpButtonRole as String || role == NSAccessibility.Role.link.rawValue,
+               let rect = frame(of: element), !controls.contains(rect) {
+                controls.append(rect)
+            }
+            guard let children = attribute(element, kAXChildrenAttribute as CFString) as? [AXUIElement] else { continue }
+            if !children.isEmpty {
+                guard depth < 16 else { return nil }
+                queue.append(contentsOf: children.map { ($0, depth + 1) })
+            }
+        }
+        // An incomplete tree cannot prove that the proposed slot is unobstructed.
+        return cursor == queue.count ? controls : nil
     }
 
     private func accountContentFrame(of control: AXUIElement, within accountFrame: CGRect) -> CGRect? {

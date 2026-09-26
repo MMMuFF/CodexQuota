@@ -115,6 +115,8 @@ private struct CodexQuotaCoreTestRunner {
             ("昵称边界失效不应把宽底栏额度压成零宽", overlayMissingContentBounds),
             ("侧边栏变化时额度文字保持居中", overlayBadgeFollowsSidebar),
             ("侧边栏隐藏几何判定", overlaySidebarVisibility),
+            ("新版窄导航栏额度放在底部按钮上方", navigationRailPlacement),
+            ("窄导航栏不覆盖偏离中线的按钮", navigationRailSafety),
             ("仅任务页账户底栏显示组件", overlayTaskSidebarFooter),
             ("临时对话框不误判为设置页", overlayTransientDialogRecognition),
             ("侧边栏拖动瞬态保持显示", overlaySidebarResizeContinuity),
@@ -1535,6 +1537,43 @@ private struct CodexQuotaCoreTestRunner {
             CodexOverlayGeometry.mainWindow(in: snapshots)?.windowID == 4,
             "未排除较小弹窗并选择有效主窗口"
         )
+    }
+
+    private static func navigationRailPlacement() throws {
+        let window = CGRect(x: 100, y: 50, width: 1200, height: 900)
+        let rail = CGRect(x: 100, y: 90, width: 52, height: 860)
+        let controls = [
+            CGRect(x: 110, y: 130, width: 32, height: 32),
+            CGRect(x: 110, y: 200, width: 32, height: 32),
+            CGRect(x: 110, y: 500, width: 32, height: 32),
+            CGRect(x: 114, y: 870, width: 24, height: 24),
+            CGRect(x: 114, y: 914, width: 24, height: 24),
+        ]
+        let badge = CodexOverlayGeometry.navigationRailBadgeFrame(
+            railFrame: rail, windowFrame: window, controlFrames: controls
+        )
+        try expect(badge == CGRect(x: 104, y: 798, width: 44, height: 64), "窄导航栏未提供头像与帮助按钮上方的竖排位置")
+    }
+
+    private static func navigationRailSafety() throws {
+        let window = CGRect(x: 100, y: 50, width: 1200, height: 900)
+        let rail = CGRect(x: 100, y: 90, width: 52, height: 860)
+        let controls = [CGRect(x: 110, y: 130, width: 32, height: 32),
+                        CGRect(x: 110, y: 200, width: 32, height: 32),
+                        CGRect(x: 114, y: 870, width: 24, height: 24),
+                        CGRect(x: 114, y: 914, width: 24, height: 24)]
+        try expect(CodexOverlayGeometry.navigationRailBadgeFrame(railFrame: rail, windowFrame: window,
+            controlFrames: controls + [CGRect(x: 100, y: 820, width: 20, height: 20)]) == nil, "竖排额度遮挡了不居中的按钮")
+        for invalidRail in [rail.offsetBy(dx: 100, dy: 0), CGRect(x: 100, y: 90, width: 36, height: 860),
+                            CGRect(x: 100, y: 500, width: 52, height: 450)] {
+            try expect(CodexOverlayGeometry.navigationRailBadgeFrame(railFrame: invalidRail, windowFrame: window, controlFrames: controls) == nil,
+                       "非导航栏或过窄区域被误判")
+        }
+        try expect(CodexOverlayGeometry.navigationRailBadgeFrame(railFrame: rail, windowFrame: window, controlFrames: Array(controls.dropLast())) == nil,
+                   "底部账户按钮消失后仍残留额度")
+        let moved = CodexOverlayGeometry.navigationRailBadgeFrame(railFrame: rail.offsetBy(dx: -200, dy: 80),
+            windowFrame: window.offsetBy(dx: -200, dy: 80), controlFrames: controls.map { $0.offsetBy(dx: -200, dy: 80) })
+        try expect(moved == CGRect(x: -96, y: 878, width: 44, height: 64), "移动到负坐标屏幕后未跟随")
     }
 
     private static func resetCreditPresentationStates() throws {

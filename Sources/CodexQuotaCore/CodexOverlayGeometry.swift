@@ -128,6 +128,39 @@ public struct CodexTaskSidebarContinuity: Sendable {
 }
 
 public enum CodexOverlayGeometry {
+    public static func navigationRailBadgeFrame(
+        railFrame: CGRect, windowFrame: CGRect, controlFrames: [CGRect]
+    ) -> CGRect? {
+        guard isNavigationRail(railFrame, within: windowFrame) else { return nil }
+        var controls: [CGRect] = []
+        for frame in controlFrames where railFrame.contains(frame)
+            && frame.width >= 20 && frame.width <= 56
+            && frame.height >= 20 && frame.height <= 56
+            && abs(frame.midX - railFrame.midX) <= 8 {
+            if !controls.contains(frame) { controls.append(frame) }
+        }
+        controls.sort { $0.maxY < $1.maxY }
+        guard controls.count >= 4 else { return nil }
+        let account = controls[controls.count - 1]
+        let help = controls[controls.count - 2]
+        guard railFrame.maxY - account.maxY <= 28,
+              account.minY - help.maxY >= 4,
+              account.minY - help.maxY <= 72 else { return nil }
+        let badge = CGRect(x: railFrame.minX + 4, y: help.minY - 8 - 64,
+                           width: railFrame.width - 8, height: 64)
+        guard railFrame.contains(badge),
+              !controlFrames.contains(where: { $0.insetBy(dx: -4, dy: -8).intersects(badge) }) else { return nil }
+        return badge
+    }
+
+    public static func isNavigationRail(_ frame: CGRect, within window: CGRect) -> Bool {
+        frame.width >= 48 && frame.width <= 88
+            && frame.height >= window.height * 0.75
+            && abs(frame.minX - window.minX) <= 8
+            && abs(frame.maxY - window.maxY) <= 8
+            && window.contains(frame)
+    }
+
     public static let horizontalInset: CGFloat = 118
     public static let bottomInset: CGFloat = 19
     public static let badgeSize = CGSize(width: 154, height: 28)

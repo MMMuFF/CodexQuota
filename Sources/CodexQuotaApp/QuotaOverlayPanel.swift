@@ -99,18 +99,11 @@ final class QuotaChipView: NSView {
             paragraph.alignment = .center
             paragraph.lineSpacing = 2
             paragraph.lineBreakMode = .byClipping
-            let percent = lines.first ?? ""
-            let percentFont = [15.0, 13.0, 11.0].map {
-                NSFont.monospacedDigitSystemFont(ofSize: $0, weight: .semibold)
-            }.first { (percent as NSString).size(withAttributes: [.font: $0]).width <= bounds.width - 8 }
-                ?? .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-            let attributed = NSMutableAttributedString(string: text, attributes: [
+            let attributed = NSAttributedString(string: text, attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
                 .paragraphStyle: paragraph,
                 .foregroundColor: needsAttention ? NSColor.labelColor : NSColor.secondaryLabelColor,
             ])
-            attributed.addAttribute(.font, value: percentFont,
-                                    range: NSRange(location: 0, length: percent.utf16.count))
             if !label.attributedStringValue.isEqual(to: attributed) {
                 label.attributedStringValue = attributed
                 needsDisplay = true

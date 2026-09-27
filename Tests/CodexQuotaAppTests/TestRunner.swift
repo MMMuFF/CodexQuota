@@ -494,6 +494,16 @@ private struct AppTests {
         chip.update(title: title, tooltip: "Full details", usageDeviation: nil)
         chip.layoutSubtreeIfNeeded()
         let label = chip.subviews.compactMap { $0 as? NSTextField }.first!
+        func expectUniformTypography() throws {
+            let text = label.attributedStringValue
+            var fonts: [NSFont] = []
+            text.enumerateAttribute(.font, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+                if let font = value as? NSFont { fonts.append(font) }
+            }
+            try expect(!fonts.isEmpty && fonts.allSatisfy { $0 == fonts.first },
+                       "竖排百分比、日期、天数的字号与字重必须一致")
+        }
+        try expectUniformTypography()
         try expect(label.stringValue == L("98%\n9/29\n3天", "98%\n9/29\n3d"), "窄栏仍压成单行百分比，未呈现日期和天数")
         try expect(abs(label.frame.midY - chip.bounds.midY) < 1, "三行文字未垂直居中")
         try expect(abs(label.frame.midX - chip.bounds.midX) < 1, "三行文字未水平居中")
@@ -514,6 +524,7 @@ private struct AppTests {
         chip.setFrameSize(NSSize(width: 40, height: 64))
         chip.update(title: L("100% · 12月31日 · 7天", "100% · Dec 31 · 7d"), tooltip: "Full details", usageDeviation: nil)
         chip.layoutSubtreeIfNeeded()
+        try expectUniformTypography()
         try expect(chip.bounds.contains(label.frame) && label.frame.height <= 56,
                    "100% 在最窄导航栏意外折行：\(label.frame)")
         chip.update(title: title, tooltip: "Full details", usageDeviation: QuotaUsageDeviation(signedPercentagePoints: 30))

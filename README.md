@@ -2,7 +2,7 @@
 
 **简体中文** | [English](README.en.md)
 
-> v0.8.6 增加新版窄导航栏的三行竖排显示，旧版侧栏仍使用横排；同时修复 Codex 内置 CLI 路径变更后的数据读取失败。适配范围与验收边界见[更新说明](docs/releases/v0.8.6.md)。
+> v0.8.7 将竖排的百分比、日期、天数统一为相同字号与字重，保留居中和偏差下划线。包含 v0.8.6 的新版导航栏与数据读取兼容修复，见[更新说明](docs/releases/v0.8.7.md)。
 
 ![新版窄导航栏布局示意，非真实账户](docs/images/navigation-rail-preview-zh.png)
 

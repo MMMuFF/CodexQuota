@@ -59,6 +59,23 @@ final class CodexSidebarLocator {
     private var lastFooterMetrics: CodexTaskSidebarFooterMetrics?
     private var didRequestAccess = false
 
+    private let readAttribute: (AXUIElement, CFString) -> CFTypeRef?
+    private let checkAccess: (() -> Bool)?
+    private let hitTest: ((CGPoint, AXUIElement) -> AXUIElement?)?
+
+    init(
+        readAttribute: @escaping (AXUIElement, CFString) -> CFTypeRef? = { element, name in
+            var value: CFTypeRef?
+            return AXUIElementCopyAttributeValue(element, name, &value) == .success ? value : nil
+        },
+        checkAccess: (() -> Bool)? = nil,
+        hitTest: ((CGPoint, AXUIElement) -> AXUIElement?)? = nil
+    ) {
+        self.readAttribute = readAttribute
+        self.checkAccess = checkAccess
+        self.hitTest = hitTest
+    }
+
     func placement(for window: LocatedCodexWindow) -> CodexSidebarPlacement {
         guard accessibilityIsAvailable() else {
             taskSidebarContinuity.reset()
@@ -91,7 +108,12 @@ final class CodexSidebarLocator {
                 for: cachedElements,
                 windowFrame: window.accessibilityFrame
             ) {
-                return placement
+                if case .hidden = placement,
+                   Date().timeIntervalSince(lastSearchAt) >= searchRetryInterval {
+                    self.cachedElements = nil
+                } else {
+                    return placement
+                }
             }
             self.cachedElements = nil
         }
@@ -130,6 +152,7 @@ final class CodexSidebarLocator {
     }
 
     private func accessibilityIsAvailable() -> Bool {
+        if let checkAccess { return checkAccess() }
         if AXIsProcessTrusted() {
             return true
         }
@@ -196,16 +219,6 @@ final class CodexSidebarLocator {
                let elementFrame = frame(of: item.element),
                isMainContentCandidate(elementFrame, for: targetFrame) {
                 mainContent = item.element
-            }
-
-            if let sidebar, let anchor, let mainContent {
-                return .elements(
-                    SidebarElements(
-                        sidebar: sidebar,
-                        anchor: anchor,
-                        mainContent: mainContent
-                    )
-                )
             }
 
             if item.depth < 50,
@@ -472,6 +485,7 @@ final class CodexSidebarLocator {
         at point: CGPoint,
         in application: AXUIElement
     ) -> AXUIElement? {
+        if let hitTest { return hitTest(point, application) }
         var element: AXUIElement?
         return AXUIElementCopyElementAtPosition(
             application,
@@ -563,10 +577,7 @@ final class CodexSidebarLocator {
     }
 
     private func attribute(_ element: AXUIElement, _ name: CFString) -> CFTypeRef? {
-        var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, name, &value) == .success
-            ? value
-            : nil
+        readAttribute(element, name)
     }
 
     private func stringAttribute(_ element: AXUIElement, _ name: CFString) -> String? {

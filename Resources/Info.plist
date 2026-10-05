@@ -29,7 +29,7 @@
     <key>CFBundleShortVersionString</key>
 	<string>0.8.7</string>
     <key>CFBundleVersion</key>
-	<string>39</string>
+	<string>40</string>
     <key>SUFeedURL</key>
     <string>https://github.com/MMMuFF/CodexQuota/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>

@@ -69,6 +69,29 @@ private struct LocatorTests {
         }
         print("PASS: navigation rail takes precedence over legacy landmarks")
 
+        let noHelp = Fixture()
+        noHelp.prepare(includeRail: true)
+        let noHelpLocator = noHelp.locator()
+        guard case .vertical = noHelpLocator.placement(for: noHelp.target) else { exit(1) }
+        let noHelpControls = [60, 120, 180, 750].map { y in
+            noHelp.node(role: kAXButtonRole, frame: CGRect(x: 16, y: y, width: 32, height: 32))
+        }
+        noHelp.set(noHelp.rail, kAXChildrenAttribute, noHelpControls)
+        guard case let .vertical(frame) = noHelpLocator.placement(for: noHelp.target),
+              frame == CGRect(x: 4, y: 678, width: 56, height: 64) else {
+            print("FAIL: rail without a help button must place quota above the account")
+            exit(1)
+        }
+        print("PASS: rail without a help button anchors above the account")
+
+        let noHelpObstruction = noHelp.node(role: kAXButtonRole, frame: CGRect(x: 4, y: 690, width: 20, height: 20))
+        noHelp.set(noHelp.rail, kAXChildrenAttribute, noHelpControls + [noHelpObstruction])
+        guard case .hidden = noHelpLocator.placement(for: noHelp.target) else {
+            print("FAIL: account-anchored quota must not cover an off-center button")
+            exit(1)
+        }
+        print("PASS: account-anchored quota avoids occupied slots")
+
         let transition = Fixture()
         transition.prepare(includeRail: false)
         let locator = transition.locator()
@@ -97,6 +120,6 @@ private struct LocatorTests {
         }, checkAccess: { false }, hitTest: { _, _ in nil })
         guard case .permissionRequired = denied.placement(for: fixture.target) else { exit(1) }
         print("PASS: missing permission never reads the UI tree")
-        print("All 4 real-locator checks passed with synthetic nodes")
+        print("All 6 real-locator checks passed with synthetic nodes")
     }
 }

@@ -8,7 +8,7 @@
 
 > 从 v0.8.4 或更早版本升级，需要先手动安装一次 v0.8.5；之后可在“···”中检查更新或启用自动更新。
 
-一个开源的 macOS 伴生应用：在 Codex Desktop 左侧栏显示额度——旧版位于昵称右侧，新版窄导航栏位于帮助按钮上方。不占用菜单栏，也不修改 Codex 安装包。
+一个开源的 macOS 伴生应用：在 Codex Desktop 左侧栏显示额度——旧版位于昵称右侧，新版窄导航栏位于底部帮助按钮上方；没有帮助按钮时，自动放在头像上方，并避让其他按钮。不占用菜单栏，也不修改 Codex 安装包。
 
 <p align="center">
   <a href="https://github.com/MMMuFF/CodexQuota/releases/latest"><strong>下载最新版</strong></a>

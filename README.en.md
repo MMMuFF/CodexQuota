@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | **English**
 
-An open-source macOS companion app that shows remaining quota in the Codex sidebar: beside the account name in legacy layouts, or above Help in the new narrow navigation rail. No menu-bar clutter and no modifications to the Codex app bundle.
+An open-source macOS companion app that shows remaining quota in the Codex sidebar: beside the account name in legacy layouts, or above the bottom Help button in the new narrow navigation rail. When Help is absent, the quota moves above the avatar while avoiding other buttons. No menu-bar clutter and no modifications to the Codex app bundle.
 
 v0.8.7 uses the same font size and weight for all three navigation-rail rows, preserving centering and the deviation underline. Includes the v0.8.6 navigation-rail and bundled-CLI compatibility fixes. See [release notes](docs/releases/v0.8.7.md).
 

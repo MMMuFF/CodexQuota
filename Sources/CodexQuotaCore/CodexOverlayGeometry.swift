@@ -142,11 +142,13 @@ public enum CodexOverlayGeometry {
         controls.sort { $0.maxY < $1.maxY }
         guard controls.count >= 4 else { return nil }
         let account = controls[controls.count - 1]
-        let help = controls[controls.count - 2]
+        let precedingControl = controls[controls.count - 2]
+        let bottomControlGap = account.minY - precedingControl.maxY
         guard railFrame.maxY - account.maxY <= 28,
-              account.minY - help.maxY >= 4,
-              account.minY - help.maxY <= 72 else { return nil }
-        let badge = CGRect(x: railFrame.minX + 4, y: help.minY - 8 - 64,
+              bottomControlGap >= 4 else { return nil }
+        // Newer Codex layouts omit the help button above the account.
+        let anchor = bottomControlGap <= 72 ? precedingControl : account
+        let badge = CGRect(x: railFrame.minX + 4, y: anchor.minY - 8 - 64,
                            width: railFrame.width - 8, height: 64)
         guard railFrame.contains(badge),
               !controlFrames.contains(where: { $0.insetBy(dx: -4, dy: -8).intersects(badge) }) else { return nil }

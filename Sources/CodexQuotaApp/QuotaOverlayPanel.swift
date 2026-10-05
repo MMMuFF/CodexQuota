@@ -45,6 +45,9 @@ final class QuotaChipView: NSView {
     private var isExpanded = false
     private var needsAttention = false
     private var usageDeviation: QuotaUsageDeviation?
+    private var labelConstraints: [NSLayoutConstraint] = []
+    var isVertical: Bool { bounds.height >= 64 && bounds.width <= 88 }
+    var preferredPopoverEdge: NSRectEdge { isVertical ? .maxX : .maxY }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -73,8 +76,8 @@ final class QuotaChipView: NSView {
         if deviationChanged { needsDisplay = true }
     }
 
-    override func layout() {
-        super.layout()
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
         updateFittedTitle()
     }
 
@@ -86,6 +89,34 @@ final class QuotaChipView: NSView {
         for (index, month) in ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].enumerated() {
             compactTitle = compactTitle.replacingOccurrences(of: "\(month) ", with: "\(index + 1)/")
         }
+        label.maximumNumberOfLines = isVertical ? 3 : 1
+        if isVertical {
+            if labelConstraints.first?.isActive == true { NSLayoutConstraint.deactivate(labelConstraints) }
+            label.translatesAutoresizingMaskIntoConstraints = true
+            let lines = Array(compactTitle.components(separatedBy: "·").prefix(3))
+            let text = lines.joined(separator: "\n")
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = .center
+            paragraph.lineSpacing = 2
+            paragraph.lineBreakMode = .byClipping
+            let attributed = NSAttributedString(string: text, attributes: [
+                .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+                .paragraphStyle: paragraph,
+                .foregroundColor: needsAttention ? NSColor.labelColor : NSColor.secondaryLabelColor,
+            ])
+            if !label.attributedStringValue.isEqual(to: attributed) {
+                label.attributedStringValue = attributed
+                needsDisplay = true
+            }
+            let height = min(ceil(label.intrinsicContentSize.height), bounds.height - 8)
+            label.frame = NSRect(x: 1, y: (bounds.height - height) / 2,
+                                 width: bounds.width - 2, height: height)
+            return
+        }
+        label.translatesAutoresizingMaskIntoConstraints = false
+        if labelConstraints.first?.isActive == false { NSLayoutConstraint.activate(labelConstraints) }
+        // Reset multiline font runs when returning to the legacy horizontal footer.
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         let percentTitle = fullTitle.components(separatedBy: " · ").first ?? fullTitle
         let dateTitle = compactTitle.components(separatedBy: "·").prefix(2).joined(separator: "·")
         let candidates = [fullTitle, compactTitle, dateTitle, percentTitle]
@@ -108,6 +139,7 @@ final class QuotaChipView: NSView {
     func setNeedsAttention(_ attention: Bool) {
         needsAttention = attention
         label.textColor = attention ? .labelColor : .secondaryLabelColor
+        if isVertical { updateFittedTitle() }
         needsDisplay = true
     }
 
@@ -199,11 +231,12 @@ final class QuotaChipView: NSView {
         label.translatesAutoresizingMaskIntoConstraints = false
 
         addSubview(label)
-        NSLayoutConstraint.activate([
+        labelConstraints = [
             label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.leadingInset),
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.trailingInset),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
+        ]
+        NSLayoutConstraint.activate(labelConstraints)
 
         setAccessibilityElement(true)
         setAccessibilityRole(.button)

@@ -2,11 +2,13 @@
 
 **简体中文** | [English](README.en.md)
 
-> v0.8.5 新增日期星期、签名自动更新和 15% 预测门槛，并修复昵称测量失效时额度消失的问题。完整变更见[更新说明](docs/releases/v0.8.5.md)。
+> v0.8.7 将竖排的百分比、日期、天数统一为相同字号与字重，保留居中和偏差下划线。包含 v0.8.6 的新版导航栏与数据读取兼容修复，见[更新说明](docs/releases/v0.8.7.md)。
+
+![新版窄导航栏布局示意，非真实账户](docs/images/navigation-rail-preview-zh.png)
 
 > 从 v0.8.4 或更早版本升级，需要先手动安装一次 v0.8.5；之后可在“···”中检查更新或启用自动更新。
 
-一个开源的 macOS 伴生应用：在 Codex Desktop 左侧栏底部、用户昵称右侧显示额度，不占用菜单栏，也不修改 Codex 安装包。
+一个开源的 macOS 伴生应用：在 Codex Desktop 左侧栏显示额度——旧版位于昵称右侧，新版窄导航栏位于底部帮助按钮上方；没有帮助按钮时，自动放在头像上方，并避让其他按钮。不占用菜单栏，也不修改 Codex 安装包。
 
 <p align="center">
   <a href="https://github.com/MMMuFF/CodexQuota/releases/latest"><strong>下载最新版</strong></a>

@@ -271,6 +271,16 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         targetApplication = targetWindow.application
         let sidebarTrailingX: CGFloat?
         switch sidebarLocator.placement(for: targetWindow) {
+        case let .vertical(accessibilityFrame):
+            restoreStandardChipIfNeeded()
+            let frame = CGRect(
+                x: targetWindow.frame.minX + accessibilityFrame.minX - targetWindow.accessibilityFrame.minX,
+                y: targetWindow.frame.minY + targetWindow.accessibilityFrame.maxY - accessibilityFrame.maxY,
+                width: accessibilityFrame.width, height: accessibilityFrame.height
+            )
+            if overlayPanel.frame != frame { overlayPanel.setFrame(frame, display: true) }
+            overlayPanel.order(.above, relativeTo: targetWindow.windowID)
+            return
         case .permissionRequired:
             showAccessibilityPrompt(for: targetWindow)
             return
@@ -479,7 +489,7 @@ final class QuotaOverlayController: NSObject, NSPopoverDelegate {
         popover.show(
             relativeTo: overlayPanel.chipView.bounds,
             of: overlayPanel.chipView,
-            preferredEdge: .maxY
+            preferredEdge: overlayPanel.chipView.preferredPopoverEdge
         )
     }
 

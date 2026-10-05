@@ -57,7 +57,7 @@ private struct AppTests {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         if CommandLine.arguments.contains("--english") {
-            do { try englishInterface(); print("English AppKit checks passed") }
+            do { try englishInterface(); try verticalChip(); print("English AppKit checks passed") }
             catch { print("English AppKit check failed: \(error)"); exit(1) }
             return
         }
@@ -77,6 +77,7 @@ private struct AppTests {
             ("公告按时区重排且保留刷新禁用状态", publicResetTimeZone),
             ("悬停与展开时保留偏差下划线", underline),
             ("避让麦克风后的额度文字自适应宽度", adaptiveChipTitle),
+            ("窄导航栏三行居中且能恢复横排", verticalChip),
             ("短昵称加带文字语音按钮保留日期", shortNicknameChip),
             ("重复悬停刷新不在长短额度文案间闪烁", stableCompactRefresh),
             ("额度和详情卡的鼠标感应区域不反复重建", stableHoverTracking),
@@ -487,6 +488,87 @@ private struct AppTests {
         try expect(!panel.canBecomeKey && !panel.canBecomeMain, "额度会抢走目标窗口焦点")
     }
 
+    static func verticalChip() throws {
+        let chip = QuotaChipView(frame: NSRect(x: 0, y: 0, width: 44, height: 64))
+        let title = L("98% · 9月29日 · 3天", "98% · Sep 29 · 3d")
+        chip.update(title: title, tooltip: "Full details", usageDeviation: nil)
+        chip.layoutSubtreeIfNeeded()
+        let label = chip.subviews.compactMap { $0 as? NSTextField }.first!
+        func expectUniformTypography() throws {
+            let text = label.attributedStringValue
+            var fonts: [NSFont] = []
+            text.enumerateAttribute(.font, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+                if let font = value as? NSFont { fonts.append(font) }
+            }
+            try expect(!fonts.isEmpty && fonts.allSatisfy { $0 == fonts.first },
+                       "竖排百分比、日期、天数的字号与字重必须一致")
+        }
+        try expectUniformTypography()
+        try expect(label.stringValue == L("98%\n9/29\n3天", "98%\n9/29\n3d"), "窄栏仍压成单行百分比，未呈现日期和天数")
+        try expect(abs(label.frame.midY - chip.bounds.midY) < 1, "三行文字未垂直居中")
+        try expect(abs(label.frame.midX - chip.bounds.midX) < 1, "三行文字未水平居中")
+        try expect(chip.bounds.contains(label.frame), "三行文字超出组件：\(label.frame)，固有尺寸 \(label.intrinsicContentSize)")
+        for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
+            chip.appearance = NSAppearance(named: appearance)
+            guard let bitmap = chip.bitmapImageRepForCachingDisplay(in: chip.bounds) else {
+                throw CheckFailure(message: "无法渲染竖排额度")
+            }
+            chip.cacheDisplay(in: chip.bounds, to: bitmap)
+            let output = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+                .appendingPathComponent("vertical-chip-\(name).png")
+            try bitmap.representation(using: .png, properties: [:])?.write(to: output)
+        }
+        chip.setFrameSize(NSSize(width: 240, height: 28))
+        chip.layoutSubtreeIfNeeded()
+        try expect(label.stringValue == title, "恢复宽侧栏后仍为竖排")
+        chip.setFrameSize(NSSize(width: 40, height: 64))
+        chip.update(title: L("100% · 12月31日 · 7天", "100% · Dec 31 · 7d"), tooltip: "Full details", usageDeviation: nil)
+        chip.layoutSubtreeIfNeeded()
+        try expectUniformTypography()
+        try expect(chip.bounds.contains(label.frame) && label.frame.height <= 56,
+                   "100% 在最窄导航栏意外折行：\(label.frame)")
+        chip.update(title: title, tooltip: "Full details", usageDeviation: QuotaUsageDeviation(signedPercentagePoints: 30))
+        try expect(try orangePixels(in: chip) > 10, "竖排偏差线未显示")
+        chip.setExpanded(true)
+        try expect(try orangePixels(in: chip) > 10, "竖排展开后偏差线消失")
+        try renderRailPreview()
+    }
+
+    static func renderRailPreview() throws {
+        let preview = NSView(frame: NSRect(x: 0, y: 0, width: 250, height: 240))
+        preview.appearance = NSAppearance(named: .darkAqua)
+        preview.wantsLayer = true
+        preview.layer?.backgroundColor = NSColor(calibratedWhite: 0.10, alpha: 1).cgColor
+        let rail = NSView(frame: NSRect(x: 0, y: 0, width: 52, height: 240))
+        rail.wantsLayer = true
+        rail.layer?.backgroundColor = NSColor(calibratedWhite: 0.135, alpha: 1).cgColor
+        preview.addSubview(rail)
+        for (symbol, y) in [("folder", 200.0), ("questionmark.circle", 52.0), ("person.crop.circle.fill", 12.0)] {
+            let icon = NSImageView(frame: NSRect(x: 14, y: y, width: 24, height: 24))
+            icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            icon.contentTintColor = .secondaryLabelColor
+            rail.addSubview(icon)
+        }
+        let chip = QuotaChipView(frame: NSRect(x: 4, y: 92, width: 44, height: 64))
+        chip.update(title: L("98% · 9月29日 · 3天", "98% · Sep 29 · 3d"), tooltip: "Demo",
+                    usageDeviation: QuotaUsageDeviation(signedPercentagePoints: 10))
+        rail.addSubview(chip)
+        for (text, y, size) in [("Codex", 202.0, 18.0), (L("悬停查看详情", "Hover for details"), 118.0, 12.0),
+                                 (L("布局示意 · 非实际账户", "Preview · Demo data"), 18.0, 10.0)] {
+            let label = NSTextField(labelWithString: text)
+            label.font = .systemFont(ofSize: size)
+            label.textColor = .secondaryLabelColor
+            label.frame = NSRect(x: 72, y: y, width: 172, height: 25)
+            preview.addSubview(label)
+        }
+        preview.layoutSubtreeIfNeeded()
+        let bitmap = preview.bitmapImageRepForCachingDisplay(in: preview.bounds)!
+        preview.cacheDisplay(in: preview.bounds, to: bitmap)
+        let output = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+            .appendingPathComponent(L("navigation-rail-preview-zh.png", "navigation-rail-preview-en.png"))
+        try bitmap.representation(using: .png, properties: [:])?.write(to: output)
+    }
+
     static func backgroundOverlay() throws {
         let target = NSWindow(
             contentRect: NSRect(x: 100, y: 100, width: 900, height: 600),
@@ -548,6 +630,17 @@ private struct AppTests {
             for: movedFrame, sidebarTrailingX: 490,
             footerCenterBottomInset: 32, trailingControlMinX: 440
         ), "后台时额度没有跟随目标窗口移动")
+
+        let verticalAXFrame = CGRect(x: movedFrame.minX + 4, y: movedFrame.maxY - 180, width: 44, height: 64)
+        CodexSidebarLocator.testPlacement = .vertical(accessibilityFrame: verticalAXFrame)
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(panel.isVisible && panel.frame == CGRect(x: movedFrame.minX + 4, y: movedFrame.minY + 116, width: 44, height: 64),
+                   "竖导航栏定位未转换成 AppKit 坐标并显示")
+        let chip = (panel as! QuotaOverlayPanel).chipView
+        try expect(chip.preferredPopoverEdge == .maxX, "竖排详情应向右展开")
+        CodexSidebarLocator.testPlacement = .visible(trailingEdgeX: 490, footerCenterBottomInset: 32, trailingControlMinX: 440)
+        controller.perform(NSSelectorFromString("placementTimerFired"))
+        try expect(panel.frame.height == 28 && chip.preferredPopoverEdge == .maxY, "旧版横排及弹窗方向未恢复")
 
         for placement: CodexSidebarPlacement in [.hidden, .unavailable] {
             CodexSidebarLocator.testPlacement = placement

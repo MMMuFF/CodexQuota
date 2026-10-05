@@ -35,3 +35,4 @@ swiftc -parse-as-library -swift-version 5 \
 
 "${test_dir}/CodexQuotaAppChecks" -AppleLanguages '(zh-Hans)'
 "${test_dir}/CodexQuotaAppChecks" --english -AppleLanguages '(en)'
+zsh "${script_dir}/run-locator-tests.sh"
